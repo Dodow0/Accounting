@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_primary">#21A67A</color>
+    <color name="brand_primary_light">#DDF4EC</color>
+    <color name="income_amount">#21A67A</color>
+    <color name="expense_amount">#111111</color>
+    <color name="over_budget">#FF7F8F</color>
+    <color name="warning_amount">#F2A33A</color>
+    <color name="app_background">#FFFFFF</color>
+    <color name="app_surface">#FFFFFF</color>
+    <color name="app_surface_variant">#F8F6EF</color>
+    <color name="app_on_surface">#111111</color>
+    <color name="app_on_surface_variant">#7B756D</color>
+    <color name="app_outline">#DFDCD3</color>
+</resources>

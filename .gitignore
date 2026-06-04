@@ -1,0 +1,40 @@
+# Gradle files
+.gradle/
+build/
+*/build/
+
+# Kotlin / IntelliJ / Android Studio
+.idea/
+.kotlin/
+*.iml
+*.iws
+*.ipr
+out/
+.navigation/
+
+# Android specific
+local.properties
+.externalNativeBuild
+.cxx
+captures/
+app/schemas/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+*.apk
+*.aar
+*.jks
+*.keystore
+
+# Logs
+*.log
+
+# Gradle Wrapper (optional to ignore, but usually kept)
+# !gradle/wrapper/gradle-wrapper.jar
+
+# Sensitive information (not typically in this project but good practice)
+google-services.json
