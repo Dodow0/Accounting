@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Accounting</string>
+    <string name="tab_home">首页</string>
+    <string name="tab_stats">统计</string>
+    <string name="tab_ledger">账单</string>
+    <string name="tab_settings">设置</string>
+    <string name="action_add_entry">记账</string>
 </resources>

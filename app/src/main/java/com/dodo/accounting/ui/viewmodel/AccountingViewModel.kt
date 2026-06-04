@@ -14,9 +14,7 @@ import com.dodo.accounting.data.local.model.AccountBalanceRow
 import com.dodo.accounting.data.local.model.CategorySummaryRow
 import com.dodo.accounting.data.local.model.TransactionWithDetails
 import com.dodo.accounting.domain.model.AccountingSummary
-import com.dodo.accounting.domain.model.Money
 import com.dodo.accounting.domain.model.StatsPeriod
-import com.dodo.accounting.domain.model.TransactionDraft
 import com.dodo.accounting.domain.model.rangeContaining
 import com.dodo.accounting.domain.repository.AccountingRepository
 import com.dodo.accounting.domain.usecase.AddTransactionUseCase
@@ -95,6 +93,18 @@ class AccountingViewModel @Inject constructor(
     private val localState = MutableStateFlow(
         AccountingUiState(isLoading = true)
     )
+    private val transactionActions by lazy {
+        TransactionActions(viewModelScope, repository, addTransaction, localState, ::showMessage)
+    }
+    private val planningActions by lazy {
+        PlanningActions(viewModelScope, repository, ::showMessage)
+    }
+    private val managementActions by lazy {
+        ManagementActions(viewModelScope, repository, ::showMessage)
+    }
+    private val backupActions by lazy {
+        BackupActions(viewModelScope, repository, exportBackup, localState, ::showMessage)
+    }
 
     private val summaryFlow = selectedPeriod.flatMapLatest { period ->
         observeAccountingSummary(period)
@@ -319,21 +329,7 @@ class AccountingViewModel @Inject constructor(
         note: String,
         tagIds: List<Long> = emptyList(),
         occurredAt: Long = System.currentTimeMillis()
-    ) {
-        submitDraft(
-            TransactionDraft(
-                type = TransactionType.EXPENSE,
-                amountCents = Money.fromMajor(amount).cents,
-                occurredAt = occurredAt,
-                accountId = accountId,
-                categoryId = categoryId,
-                merchant = merchant,
-                note = note,
-                tagIds = tagIds
-            ),
-            successMessage = "支出已记录"
-        )
-    }
+    ) = transactionActions.addExpense(amount, accountId, categoryId, merchant, note, tagIds, occurredAt)
 
     fun addIncome(
         amount: String,
@@ -343,21 +339,7 @@ class AccountingViewModel @Inject constructor(
         note: String,
         tagIds: List<Long> = emptyList(),
         occurredAt: Long = System.currentTimeMillis()
-    ) {
-        submitDraft(
-            TransactionDraft(
-                type = TransactionType.INCOME,
-                amountCents = Money.fromMajor(amount).cents,
-                occurredAt = occurredAt,
-                accountId = accountId,
-                categoryId = categoryId,
-                merchant = merchant,
-                note = note,
-                tagIds = tagIds
-            ),
-            successMessage = "收入已记录"
-        )
-    }
+    ) = transactionActions.addIncome(amount, accountId, categoryId, merchant, note, tagIds, occurredAt)
 
     fun addTransfer(
         amount: String,
@@ -366,20 +348,7 @@ class AccountingViewModel @Inject constructor(
         note: String,
         tagIds: List<Long> = emptyList(),
         occurredAt: Long = System.currentTimeMillis()
-    ) {
-        submitDraft(
-            TransactionDraft(
-                type = TransactionType.TRANSFER,
-                amountCents = Money.fromMajor(amount).cents,
-                occurredAt = occurredAt,
-                fromAccountId = fromAccountId,
-                toAccountId = toAccountId,
-                note = note,
-                tagIds = tagIds
-            ),
-            successMessage = "转账已记录"
-        )
-    }
+    ) = transactionActions.addTransfer(amount, fromAccountId, toAccountId, note, tagIds, occurredAt)
 
     fun addBalanceAdjustment(
         amount: String,
@@ -387,27 +356,11 @@ class AccountingViewModel @Inject constructor(
         note: String,
         tagIds: List<Long> = emptyList(),
         occurredAt: Long = System.currentTimeMillis()
-    ) {
-        submitDraft(
-            TransactionDraft(
-                type = TransactionType.BALANCE_ADJUSTMENT,
-                amountCents = Money.fromMajor(amount).cents,
-                occurredAt = occurredAt,
-                accountId = accountId,
-                note = note,
-                tagIds = tagIds
-            ),
-            successMessage = "余额校正已记录"
-        )
-    }
+    ) = transactionActions.addBalanceAdjustment(amount, accountId, note, tagIds, occurredAt)
 
-    fun startEditTransaction(transaction: TransactionWithDetails) {
-        localState.update { it.copy(editingTransaction = transaction) }
-    }
+    fun startEditTransaction(transaction: TransactionWithDetails) = transactionActions.startEditTransaction(transaction)
 
-    fun cancelEditTransaction() {
-        localState.update { it.copy(editingTransaction = null) }
-    }
+    fun cancelEditTransaction() = transactionActions.cancelEditTransaction()
 
     fun saveEditedTransaction(
         transactionId: Long,
@@ -421,92 +374,32 @@ class AccountingViewModel @Inject constructor(
         note: String,
         tagIds: List<Long> = emptyList(),
         occurredAt: Long
-    ) {
-        val draft = createDraft(
-            type = type,
-            amount = amount,
-            occurredAt = occurredAt,
-            accountId = accountId,
-            fromAccountId = fromAccountId,
-            toAccountId = toAccountId,
-            categoryId = categoryId,
-            merchant = merchant,
-            note = note,
-            tagIds = tagIds
-        )
-        viewModelScope.launch {
-            runCatching { repository.updateTransaction(transactionId, draft) }
-                .onSuccess {
-                    localState.update { state -> state.copy(editingTransaction = null) }
-                    showMessage("流水已更新")
-                }
-                .onFailure { showMessage(it.message ?: "更新失败") }
-        }
-    }
+    ) = transactionActions.saveEditedTransaction(
+        transactionId = transactionId,
+        type = type,
+        amount = amount,
+        accountId = accountId,
+        fromAccountId = fromAccountId,
+        toAccountId = toAccountId,
+        categoryId = categoryId,
+        merchant = merchant,
+        note = note,
+        tagIds = tagIds,
+        occurredAt = occurredAt
+    )
 
-    fun addAccount(
-        name: String,
-        type: AccountType,
-        initialBalance: String
-    ) {
-        viewModelScope.launch {
-            runCatching {
-                require(name.isNotBlank()) { "账户名称不能为空" }
-                repository.addAccount(
-                    AccountEntity(
-                        name = name.trim(),
-                        type = type,
-                        initialBalanceCents = Money.fromMajor(initialBalance).cents,
-                        sortOrder = System.currentTimeMillis().toInt()
-                    )
-                )
-            }.onSuccess {
-                showMessage("资产账户已添加")
-            }.onFailure {
-                showMessage(it.message ?: "添加账户失败")
-            }
-        }
-    }
+    fun addAccount(name: String, type: AccountType, initialBalance: String) =
+        managementActions.addAccount(name, type, initialBalance)
 
-    fun deleteTransaction(transactionId: Long) {
-        viewModelScope.launch {
-            runCatching { repository.softDeleteTransaction(transactionId) }
-                .onSuccess { showMessage("已移入回收站") }
-                .onFailure { showMessage(it.message ?: "删除失败") }
-        }
-    }
+    fun deleteTransaction(transactionId: Long) = transactionActions.deleteTransaction(transactionId)
 
-    fun restoreTransaction(transactionId: Long) {
-        viewModelScope.launch {
-            runCatching { repository.restoreTransaction(transactionId) }
-                .onSuccess { showMessage("已恢复") }
-                .onFailure { showMessage(it.message ?: "恢复失败") }
-        }
-    }
+    fun restoreTransaction(transactionId: Long) = transactionActions.restoreTransaction(transactionId)
 
-    fun permanentlyDeleteTransaction(transactionId: Long) {
-        viewModelScope.launch {
-            runCatching { repository.permanentlyDeleteTransaction(transactionId) }
-                .onSuccess { showMessage("已彻底删除") }
-                .onFailure { showMessage(it.message ?: "彻底删除失败") }
-        }
-    }
+    fun permanentlyDeleteTransaction(transactionId: Long) = transactionActions.permanentlyDeleteTransaction(transactionId)
 
-    fun setMonthlyBudget(amount: String) {
-        viewModelScope.launch {
-            runCatching { repository.setMonthlyBudget(Money.fromMajor(amount).cents) }
-                .onSuccess { showMessage("月度预算已更新") }
-                .onFailure { showMessage(it.message ?: "预算设置失败") }
-        }
-    }
+    fun setMonthlyBudget(amount: String) = planningActions.setMonthlyBudget(amount)
 
-    fun setCategoryBudget(category: CategoryEntity, amount: String) {
-        viewModelScope.launch {
-            runCatching { repository.setCategoryBudget(category.id, category.name, Money.fromMajor(amount).cents) }
-                .onSuccess { showMessage("${category.name} 预算已更新") }
-                .onFailure { showMessage(it.message ?: "分类预算设置失败") }
-        }
-    }
+    fun setCategoryBudget(category: CategoryEntity, amount: String) = planningActions.setCategoryBudget(category, amount)
 
     fun addMonthlyRecurringRule(
         name: String,
@@ -519,200 +412,48 @@ class AccountingViewModel @Inject constructor(
         categoryId: Long?,
         merchant: String,
         note: String
-    ) {
-        viewModelScope.launch {
-            runCatching {
-                repository.addRecurringRule(
-                    RecurringRuleEntity(
-                        name = name.trim(),
-                        transactionType = type,
-                        amountCents = Money.fromMajor(amount).cents,
-                        accountId = if (type == TransactionType.TRANSFER) null else accountId,
-                        fromAccountId = if (type == TransactionType.TRANSFER) fromAccountId else null,
-                        toAccountId = if (type == TransactionType.TRANSFER) toAccountId else null,
-                        categoryId = if (type == TransactionType.EXPENSE || type == TransactionType.INCOME) categoryId else null,
-                        merchant = if (type == TransactionType.EXPENSE || type == TransactionType.INCOME) merchant else "",
-                        note = note,
-                        intervalMonths = 1,
-                        nextRunAt = occurredAt
-                    )
-                )
-                repository.generateDueRecurringTransactions()
-            }.onSuccess { generated ->
-                showMessage(if (generated > 0) "周期规则已添加，已生成 $generated 条账单" else "周期规则已添加")
-            }.onFailure {
-                showMessage(it.message ?: "添加周期规则失败")
-            }
-        }
-    }
+    ) = planningActions.addMonthlyRecurringRule(
+        name = name,
+        type = type,
+        amount = amount,
+        occurredAt = occurredAt,
+        accountId = accountId,
+        fromAccountId = fromAccountId,
+        toAccountId = toAccountId,
+        categoryId = categoryId,
+        merchant = merchant,
+        note = note
+    )
 
-    fun runDueRecurringRules() {
-        viewModelScope.launch {
-            runCatching { repository.generateDueRecurringTransactions() }
-                .onSuccess { showMessage("已生成 $it 条到期账单") }
-                .onFailure { showMessage(it.message ?: "生成周期账单失败") }
-        }
-    }
+    fun runDueRecurringRules() = planningActions.runDueRecurringRules()
 
-    fun setRecurringRuleEnabled(id: Long, enabled: Boolean) {
-        viewModelScope.launch {
-            runCatching { repository.setRecurringRuleEnabled(id, enabled) }
-                .onSuccess { showMessage(if (enabled) "周期规则已启用" else "周期规则已停用") }
-                .onFailure { showMessage(it.message ?: "更新周期规则失败") }
-        }
-    }
+    fun setRecurringRuleEnabled(id: Long, enabled: Boolean) = planningActions.setRecurringRuleEnabled(id, enabled)
 
-    fun deleteRecurringRule(id: Long) {
-        viewModelScope.launch {
-            runCatching { repository.deleteRecurringRule(id) }
-                .onSuccess { showMessage("周期规则已删除") }
-                .onFailure { showMessage(it.message ?: "删除周期规则失败") }
-        }
-    }
+    fun deleteRecurringRule(id: Long) = planningActions.deleteRecurringRule(id)
 
-    fun addTag(name: String) {
-        viewModelScope.launch {
-            runCatching { repository.addTag(name) }
-                .onSuccess { showMessage("标签已添加") }
-                .onFailure { showMessage(it.message ?: "添加标签失败") }
-        }
-    }
+    fun addTag(name: String) = managementActions.addTag(name)
 
-    fun addCategory(name: String, kind: CategoryKind) {
-        viewModelScope.launch {
-            runCatching {
-                repository.addCategory(
-                    CategoryEntity(
-                        name = name,
-                        kind = kind,
-                        colorArgb = if (kind == CategoryKind.EXPENSE) 0xFFEA580C else 0xFF16A34A,
-                        iconName = if (kind == CategoryKind.EXPENSE) "receipt_long" else "work",
-                        sortOrder = System.currentTimeMillis().toInt()
-                    )
-                )
-            }
-                .onSuccess { showMessage("分类已添加") }
-                .onFailure { showMessage(it.message ?: "添加分类失败") }
-        }
-    }
+    fun addCategory(name: String, kind: CategoryKind) = managementActions.addCategory(name, kind)
 
-    fun renameCategory(id: Long, name: String) {
-        viewModelScope.launch {
-            runCatching { repository.renameCategory(id, name) }
-                .onSuccess { showMessage("分类已更新") }
-                .onFailure { showMessage(it.message ?: "更新分类失败") }
-        }
-    }
+    fun renameCategory(id: Long, name: String) = managementActions.renameCategory(id, name)
 
-    fun updateCategory(id: Long, name: String, iconName: String, colorArgb: Long) {
-        viewModelScope.launch {
-            runCatching { repository.updateCategory(id, name, iconName, colorArgb) }
-                .onSuccess { showMessage("分类已更新") }
-                .onFailure { showMessage(it.message ?: "更新分类失败") }
-        }
-    }
+    fun updateCategory(id: Long, name: String, iconName: String, colorArgb: Long) =
+        managementActions.updateCategory(id, name, iconName, colorArgb)
 
-    fun moveCategory(id: Long, direction: Int) {
-        viewModelScope.launch {
-            runCatching { repository.moveCategory(id, direction) }
-                .onFailure { showMessage(it.message ?: "分类排序失败") }
-        }
-    }
+    fun moveCategory(id: Long, direction: Int) = managementActions.moveCategory(id, direction)
 
-    fun deleteCategory(id: Long) {
-        viewModelScope.launch {
-            runCatching { repository.deleteCategory(id) }
-                .onSuccess { showMessage("分类已删除") }
-                .onFailure { showMessage(it.message ?: "删除分类失败") }
-        }
-    }
+    fun deleteCategory(id: Long) = managementActions.deleteCategory(id)
 
-    fun renameTag(id: Long, name: String) {
-        viewModelScope.launch {
-            runCatching { repository.renameTag(id, name) }
-                .onSuccess { showMessage("标签已更新") }
-                .onFailure { showMessage(it.message ?: "更新标签失败") }
-        }
-    }
+    fun renameTag(id: Long, name: String) = managementActions.renameTag(id, name)
 
-    fun deleteTag(id: Long) {
-        viewModelScope.launch {
-            runCatching { repository.deleteTag(id) }
-                .onSuccess { showMessage("标签已删除") }
-                .onFailure { showMessage(it.message ?: "删除标签失败") }
-        }
-    }
+    fun deleteTag(id: Long) = managementActions.deleteTag(id)
 
-    fun export(format: ExportFormat) {
-        viewModelScope.launch {
-            localState.update { it.copy(exportFormat = format) }
-            runCatching {
-                when (format) {
-                    ExportFormat.JSON -> exportBackup.json()
-                    ExportFormat.CSV -> exportBackup.csv()
-                }
-            }.onSuccess { content ->
-                localState.update {
-                    it.copy(
-                        exportPreview = content.take(12_000),
-                        exportContent = content,
-                        exportFormat = format
-                    )
-                }
-                showMessage("${format.name} 已生成预览")
-            }.onFailure {
-                showMessage(it.message ?: "导出失败")
-            }
-        }
-    }
+    fun export(format: ExportFormat) = backupActions.export(format)
 
-    fun importJson(content: String) {
-        viewModelScope.launch {
-            runCatching { repository.importJson(content) }
-                .onSuccess {
-                    localState.update { state -> state.copy(exportPreview = "", exportContent = "") }
-                    showMessage("JSON 备份已导入")
-                }
-                .onFailure { showMessage(it.message ?: "导入失败") }
-        }
-    }
+    fun importJson(content: String) = backupActions.importJson(content)
 
     fun clearMessage() {
         localState.update { it.copy(message = null) }
-    }
-
-    private fun submitDraft(draft: TransactionDraft, successMessage: String) {
-        viewModelScope.launch {
-            runCatching { addTransaction(draft) }
-                .onSuccess { showMessage(successMessage) }
-                .onFailure { showMessage(it.message ?: "记录失败") }
-        }
-    }
-
-    private fun createDraft(
-        type: TransactionType,
-        amount: String,
-        occurredAt: Long,
-        accountId: Long?,
-        fromAccountId: Long?,
-        toAccountId: Long?,
-        categoryId: Long?,
-        merchant: String,
-        note: String,
-        tagIds: List<Long>
-    ): TransactionDraft {
-        return TransactionDraft(
-            type = type,
-            amountCents = Money.fromMajor(amount).cents,
-            occurredAt = occurredAt,
-            accountId = if (type == TransactionType.TRANSFER) null else accountId,
-            fromAccountId = if (type == TransactionType.TRANSFER) fromAccountId else null,
-            toAccountId = if (type == TransactionType.TRANSFER) toAccountId else null,
-            categoryId = if (type == TransactionType.EXPENSE || type == TransactionType.INCOME) categoryId else null,
-            merchant = if (type == TransactionType.EXPENSE || type == TransactionType.INCOME) merchant else "",
-            note = note,
-            tagIds = tagIds
-        )
     }
 
     private fun showMessage(message: String) {
