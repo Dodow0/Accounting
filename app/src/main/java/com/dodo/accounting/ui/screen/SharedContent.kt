@@ -116,6 +116,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -184,6 +185,7 @@ import java.util.Locale
 @Composable
 internal fun TransactionRow(
     item: TransactionWithDetails,
+    onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     trailing: @Composable () -> Unit
 ) {
@@ -203,13 +205,22 @@ internal fun TransactionRow(
         }
         else -> transactionSubtitle(item)
     }
-    val rowModifier = if (onLongClick != null) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.985f else 1f,
+        label = "transactionRowPressScale"
+    )
+    val rowModifier = if (onClick != null || onLongClick != null) {
         Modifier
             .fillMaxWidth()
             .combinedClickable(
-                onClick = {},
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = { onClick?.invoke() },
                 onLongClick = onLongClick
             )
+            .scale(pressScale)
     } else {
         Modifier.fillMaxWidth()
     }
@@ -315,11 +326,19 @@ internal fun TransactionActionSheet(
 @Composable
 internal fun CategoryManagementCard(
     uiState: AccountingUiState,
-    viewModel: AccountingViewModel
+    viewModel: AccountingViewModel,
+    onDialogOpenChanged: (Boolean) -> Unit = {}
 ) {
     var newCategoryName by remember { mutableStateOf("") }
     var selectedKind by remember { mutableStateOf(CategoryKind.EXPENSE) }
     var categoryToEdit by remember { mutableStateOf<CategoryEntity?>(null) }
+
+    LaunchedEffect(categoryToEdit != null) {
+        onDialogOpenChanged(categoryToEdit != null)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onDialogOpenChanged(false) }
+    }
 
     LedgerCard {
             SectionHeader("分类管理", "${uiState.categories.size} 类")
@@ -551,10 +570,18 @@ internal fun CategoryEditPill(
 @Composable
 internal fun TagManagementCard(
     uiState: AccountingUiState,
-    viewModel: AccountingViewModel
+    viewModel: AccountingViewModel,
+    onDialogOpenChanged: (Boolean) -> Unit = {}
 ) {
     var newTagName by remember { mutableStateOf("") }
     var tagToRename by remember { mutableStateOf<TagEntity?>(null) }
+
+    LaunchedEffect(tagToRename != null) {
+        onDialogOpenChanged(tagToRename != null)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onDialogOpenChanged(false) }
+    }
 
     LedgerCard {
             SectionHeader("标签管理", "${uiState.tags.size} 个")
@@ -930,12 +957,22 @@ internal fun accountIcon(type: AccountType): ImageVector = when (type) {
 internal fun categoryIcon(iconName: String): ImageVector = when (iconName) {
     "restaurant" -> Icons.Default.Restaurant
     "commute" -> Icons.Default.Commute
+    "directions_bus" -> Icons.Default.DirectionsBus
     "shopping_bag" -> Icons.Default.ShoppingBag
+    "storefront" -> Icons.Default.Storefront
     "devices" -> Icons.Default.Devices
+    "phone_iphone" -> Icons.Default.PhoneIphone
     "receipt_long" -> Icons.AutoMirrored.Filled.ReceiptLong
+    "credit_card" -> Icons.Default.CreditCard
+    "payments" -> Icons.Default.Payments
+    "wallet" -> Icons.Default.Wallet
+    "home" -> Icons.Default.Home
+    "event_repeat" -> Icons.Default.EventRepeat
     "work" -> Icons.Default.Work
     "redeem" -> Icons.Default.Redeem
     "add_card" -> Icons.Default.AddCard
+    "assessment" -> Icons.Default.Assessment
+    "history" -> Icons.Default.History
     else -> Icons.Default.Category
 }
 
@@ -956,19 +993,55 @@ internal fun categoryKindLabel(kind: CategoryKind): String = when (kind) {
 }
 
 internal fun categoryIconOptions(kind: CategoryKind): List<String> = when (kind) {
-    CategoryKind.EXPENSE -> listOf("restaurant", "commute", "shopping_bag", "devices", "receipt_long", "category")
-    CategoryKind.INCOME -> listOf("work", "redeem", "add_card", "category")
+    CategoryKind.EXPENSE -> listOf(
+        "restaurant",
+        "commute",
+        "directions_bus",
+        "shopping_bag",
+        "storefront",
+        "devices",
+        "phone_iphone",
+        "receipt_long",
+        "credit_card",
+        "payments",
+        "wallet",
+        "home",
+        "event_repeat",
+        "category"
+    )
+    CategoryKind.INCOME -> listOf(
+        "work",
+        "redeem",
+        "add_card",
+        "payments",
+        "wallet",
+        "credit_card",
+        "assessment",
+        "storefront",
+        "history",
+        "category"
+    )
 }
 
 internal fun categoryIconLabel(iconName: String): String = when (iconName) {
     "restaurant" -> "餐饮"
     "commute" -> "交通"
+    "directions_bus" -> "公交"
     "shopping_bag" -> "购物"
+    "storefront" -> "门店"
     "devices" -> "数码"
+    "phone_iphone" -> "手机"
     "receipt_long" -> "账单"
+    "credit_card" -> "卡片"
+    "payments" -> "现金"
+    "wallet" -> "钱包"
+    "home" -> "居家"
+    "event_repeat" -> "周期"
     "work" -> "工资"
     "redeem" -> "优惠"
     "add_card" -> "入账"
+    "assessment" -> "理财"
+    "history" -> "历史"
     else -> "通用"
 }
 
@@ -1001,7 +1074,7 @@ internal fun transactionIcon(type: TransactionType): ImageVector = when (type) {
 
 @Composable
 internal fun transactionColor(type: TransactionType): Color = when (type) {
-    TransactionType.EXPENSE -> MaterialTheme.colorScheme.onSurface
+    TransactionType.EXPENSE -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
     TransactionType.INCOME -> MaterialTheme.colorScheme.primary
     TransactionType.TRANSFER -> MaterialTheme.colorScheme.primary
     TransactionType.BALANCE_ADJUSTMENT -> MaterialTheme.colorScheme.tertiary

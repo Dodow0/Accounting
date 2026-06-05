@@ -239,37 +239,41 @@ internal fun StatsOverviewContent(
             PeriodSelector(uiState.selectedPeriod, viewModel::setPeriod)
         }
         item {
-            StatsSummaryCard(uiState)
-        }
-        item {
-            ExpenseDonutChart(rows = expenseRows, totalCents = totalExpenseCents)
-        }
-        item {
-            LedgerCard {
-                SectionHeader("支出分类", "${expenseRows.size} 类")
-                if (expenseRows.isEmpty()) {
-                    Text(
-                        "本期暂无支出分类",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                } else {
-                    expenseRows.forEachIndexed { index, row ->
-                        CategorySummaryRow(
-                            name = row.categoryName ?: "未分类",
-                            cents = row.amountCents,
-                            totalCents = totalExpenseCents,
-                            onClick = { onSelectCategory(row) }
-                        )
-                        if (index != expenseRows.lastIndex) {
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.56f))
+            AnimatedContent(
+                targetState = uiState.selectedPeriod,
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(180)) togetherWith fadeOut(animationSpec = tween(90))
+                },
+                label = "statsPeriodContent"
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StatsSummaryCard(uiState)
+                    ExpenseDonutChart(rows = expenseRows, totalCents = totalExpenseCents)
+                    LedgerCard {
+                        SectionHeader("支出分类", "${expenseRows.size} 类")
+                        if (expenseRows.isEmpty()) {
+                            Text(
+                                "本期暂无支出分类",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        } else {
+                            expenseRows.forEachIndexed { index, row ->
+                                CategorySummaryRow(
+                                    name = row.categoryName ?: "未分类",
+                                    cents = row.amountCents,
+                                    totalCents = totalExpenseCents,
+                                    onClick = { onSelectCategory(row) }
+                                )
+                                if (index != expenseRows.lastIndex) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.56f))
+                                }
+                            }
                         }
                     }
+                    MonthlyTrendBarChart(uiState.trendTransactions)
                 }
             }
-        }
-        item {
-            MonthlyTrendBarChart(uiState.trendTransactions)
         }
     }
 }

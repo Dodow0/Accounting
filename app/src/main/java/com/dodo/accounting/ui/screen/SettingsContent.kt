@@ -195,15 +195,21 @@ internal fun MineScreen(
     viewModel: AccountingViewModel
 ) {
     var page by remember { mutableStateOf(MinePage.Menu) }
+    var childDialogOpen by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = page != MinePage.Menu) {
+    BackHandler(enabled = page != MinePage.Menu && !childDialogOpen) {
         page = MinePage.Menu
     }
 
     when (page) {
         MinePage.Menu -> MineMenu(onOpen = { page = it })
         MinePage.Accounts -> AccountManagementPage(uiState, viewModel, onBack = { page = MinePage.Menu })
-        MinePage.Categories -> CategoryManagementPage(uiState, viewModel, onBack = { page = MinePage.Menu })
+        MinePage.Categories -> CategoryManagementPage(
+            uiState = uiState,
+            viewModel = viewModel,
+            onBack = { page = MinePage.Menu },
+            onDialogOpenChanged = { childDialogOpen = it }
+        )
         MinePage.Budget -> BudgetSettingsPage(uiState, viewModel, onBack = { page = MinePage.Menu })
         MinePage.Data -> DataManagementPage(uiState, viewModel, onBack = { page = MinePage.Menu })
         MinePage.About -> AboutPage(onBack = { page = MinePage.Menu })
@@ -307,6 +313,8 @@ internal fun AccountManagementPage(
     viewModel: AccountingViewModel,
     onBack: () -> Unit
 ) {
+    val activeAccountRows = uiState.accounts.filterNot { it.account.isArchived }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -314,9 +322,12 @@ internal fun AccountManagementPage(
     ) {
         item { MineBackHeader("账户管理", onBack) }
         item { AddAccountCard(viewModel) }
-        item { SectionHeader("资产账户", "${uiState.accounts.size} 个") }
-        items(uiState.accounts, key = { it.account.id }) { row ->
-            AccountRow(row)
+        item { SectionHeader("资产账户", "${activeAccountRows.size} 个") }
+        items(activeAccountRows, key = { it.account.id }) { row ->
+            AccountRow(
+                row = row,
+                onDelete = { viewModel.archiveAccount(row.account.id) }
+            )
         }
     }
 }
@@ -325,7 +336,8 @@ internal fun AccountManagementPage(
 internal fun CategoryManagementPage(
     uiState: AccountingUiState,
     viewModel: AccountingViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onDialogOpenChanged: (Boolean) -> Unit = {}
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -333,8 +345,8 @@ internal fun CategoryManagementPage(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item { MineBackHeader("分类管理", onBack) }
-        item { CategoryManagementCard(uiState, viewModel) }
-        item { TagManagementCard(uiState, viewModel) }
+        item { CategoryManagementCard(uiState, viewModel, onDialogOpenChanged) }
+        item { TagManagementCard(uiState, viewModel, onDialogOpenChanged) }
     }
 }
 

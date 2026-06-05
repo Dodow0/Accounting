@@ -79,6 +79,7 @@ import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PhoneIphone
 import androidx.compose.material.icons.filled.PlayArrow
@@ -115,7 +116,9 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -139,6 +142,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -146,6 +150,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -247,84 +252,94 @@ fun AccountingApp(
     }
 
     var entrySheetOpen by remember { mutableStateOf(false) }
+    val entrySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val selectedTab = AppTab.entries.firstOrNull { it.route == backStackEntry?.destination?.route } ?: AppTab.Home
-
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets(0.dp),
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        bottomBar = {
-            AppBottomBar(
-                selectedTab = selectedTab,
-                onSelected = { tab ->
-                    if (tab != selectedTab) {
-                        navController.navigate(tab.route) {
-                            launchSingleTop = true
-                            restoreState = true
-                            popUpTo(AppTab.Home.route) {
-                                saveState = true
-                            }
-                        }
-                    }
-                },
-                onAdd = {
-                    viewModel.cancelEditTransaction()
-                    entrySheetOpen = true
-                }
-            )
-        }
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(padding)
-                .statusBarsPadding()
-        ) {
-            val openEditor: (TransactionWithDetails) -> Unit = { transaction ->
-                viewModel.startEditTransaction(transaction)
-                entrySheetOpen = true
-            }
-            NavHost(
-                navController = navController,
-                startDestination = AppTab.Home.route,
-                modifier = Modifier.fillMaxSize()
-            ) {
-                composable(AppTab.Home.route) {
-                    HomeScreen(uiState, viewModel, openEditor)
-                }
-                composable(AppTab.Stats.route) {
-                    StatsScreen(uiState, viewModel, openEditor)
-                }
-                composable(AppTab.Bills.route) {
-                    LedgerScreen(uiState, viewModel, openEditor)
-                }
-                composable(AppTab.Mine.route) {
-                    MineScreen(uiState, viewModel)
-                }
-            }
-        }
+    val systemDensity = LocalDensity.current
+    val appDensity = remember(systemDensity.density, systemDensity.fontScale) {
+        Density(
+            density = systemDensity.density,
+            fontScale = systemDensity.fontScale.coerceAtMost(1.15f)
+        )
     }
 
-    if (entrySheetOpen) {
-        BackHandler {
-            viewModel.cancelEditTransaction()
-            entrySheetOpen = false
-        }
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.surface
-        ) {
-            EntrySheetContentV2(
-                uiState = uiState,
-                viewModel = viewModel,
-                onDone = {
-                    entrySheetOpen = false
-                    viewModel.cancelEditTransaction()
+    CompositionLocalProvider(LocalDensity provides appDensity) {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            contentWindowInsets = WindowInsets(0.dp),
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+            bottomBar = {
+                AppBottomBar(
+                    selectedTab = selectedTab,
+                    onSelected = { tab ->
+                        if (tab != selectedTab) {
+                            navController.navigate(tab.route) {
+                                launchSingleTop = true
+                                restoreState = true
+                                popUpTo(AppTab.Home.route) {
+                                    saveState = true
+                                }
+                            }
+                        }
+                    },
+                    onAdd = {
+                        viewModel.cancelEditTransaction()
+                        entrySheetOpen = true
+                    }
+                )
+            }
+        ) { padding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(padding)
+                    .statusBarsPadding()
+            ) {
+                val openEditor: (TransactionWithDetails) -> Unit = { transaction ->
+                    viewModel.startEditTransaction(transaction)
+                    entrySheetOpen = true
                 }
-            )
+                NavHost(
+                    navController = navController,
+                    startDestination = AppTab.Home.route,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    composable(AppTab.Home.route) {
+                        HomeScreen(uiState, viewModel, openEditor)
+                    }
+                    composable(AppTab.Stats.route) {
+                        StatsScreen(uiState, viewModel, openEditor)
+                    }
+                    composable(AppTab.Bills.route) {
+                        LedgerScreen(uiState, viewModel, openEditor)
+                    }
+                    composable(AppTab.Mine.route) {
+                        MineScreen(uiState, viewModel)
+                    }
+                }
+            }
+        }
+
+        if (entrySheetOpen) {
+            ModalBottomSheet(
+                onDismissRequest = {
+                    viewModel.cancelEditTransaction()
+                    entrySheetOpen = false
+                },
+                sheetState = entrySheetState,
+                containerColor = MaterialTheme.colorScheme.background
+            ) {
+                EntrySheetContentV2(
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    onDone = {
+                        entrySheetOpen = false
+                        viewModel.cancelEditTransaction()
+                    }
+                )
+            }
         }
     }
 }
@@ -335,67 +350,85 @@ internal fun AppBottomBar(
     onSelected: (AppTab) -> Unit,
     onAdd: () -> Unit
 ) {
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding(),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 0.dp,
-        border = BorderStroke(1.dp, LedgerDivider.copy(alpha = 0.72f))
+            .navigationBarsPadding()
+            .height(88.dp)
     ) {
-        Row(
+        Surface(
             modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(68.dp)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .height(72.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
+            border = BorderStroke(1.dp, LedgerDivider.copy(alpha = 0.72f))
         ) {
-            BottomNavItem(
-                tab = AppTab.Home,
-                selected = selectedTab == AppTab.Home,
-                onClick = { onSelected(AppTab.Home) },
-                modifier = Modifier.weight(1f)
-            )
-            BottomNavItem(
-                tab = AppTab.Stats,
-                selected = selectedTab == AppTab.Stats,
-                onClick = { onSelected(AppTab.Stats) },
-                modifier = Modifier.weight(1f)
-            )
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(72.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                BottomNavItem(
+                    tab = AppTab.Home,
+                    selected = selectedTab == AppTab.Home,
+                    onClick = { onSelected(AppTab.Home) },
+                    modifier = Modifier.weight(1f)
+                )
+                BottomNavItem(
+                    tab = AppTab.Stats,
+                    selected = selectedTab == AppTab.Stats,
+                    onClick = { onSelected(AppTab.Stats) },
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                BottomNavItem(
+                    tab = AppTab.Bills,
+                    selected = selectedTab == AppTab.Bills,
+                    onClick = { onSelected(AppTab.Bills) },
+                    modifier = Modifier.weight(1f)
+                )
+                BottomNavItem(
+                    tab = AppTab.Mine,
+                    selected = selectedTab == AppTab.Mine,
+                    onClick = { onSelected(AppTab.Mine) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        Surface(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .size(68.dp)
+                .clickable(onClick = onAdd),
+            shape = RoundedCornerShape(34.dp),
+            color = Color(0xFFF3F4F6),
+            border = BorderStroke(1.dp, LedgerDivider.copy(alpha = 0.72f)),
+            shadowElevation = 0.dp
+        ) {
+            Box(contentAlignment = Alignment.Center) {
                 Surface(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clickable(onClick = onAdd),
-                    shape = RoundedCornerShape(26.dp),
-                    color = MaterialTheme.colorScheme.primary
+                    modifier = Modifier.size(58.dp),
+                    shape = RoundedCornerShape(29.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)),
+                    shadowElevation = 0.dp
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             Icons.Default.Add,
                             contentDescription = stringResource(R.string.action_add_entry),
                             tint = Color.White,
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier.size(34.dp)
                         )
                     }
                 }
             }
-            BottomNavItem(
-                tab = AppTab.Bills,
-                selected = selectedTab == AppTab.Bills,
-                onClick = { onSelected(AppTab.Bills) },
-                modifier = Modifier.weight(1f)
-            )
-            BottomNavItem(
-                tab = AppTab.Mine,
-                selected = selectedTab == AppTab.Mine,
-                onClick = { onSelected(AppTab.Mine) },
-                modifier = Modifier.weight(1f)
-            )
         }
     }
 }
@@ -416,17 +449,29 @@ internal fun BottomNavItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            tab.icon,
-            contentDescription = label,
-            tint = tint,
-            modifier = Modifier.size(23.dp)
-        )
+        Surface(
+            modifier = Modifier.height(28.dp),
+            shape = RoundedCornerShape(14.dp),
+            color = if (selected) LedgerMint else Color.Transparent
+        ) {
+            Box(
+                modifier = Modifier.padding(horizontal = 14.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    tab.icon,
+                    contentDescription = label,
+                    tint = tint,
+                    modifier = Modifier.size(if (selected) 24.dp else 23.dp)
+                )
+            }
+        }
         Spacer(Modifier.height(4.dp))
         Text(
             label,
             color = tint,
             style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             maxLines = 1
         )
     }
@@ -440,7 +485,7 @@ internal enum class AppTab(
     Home("home", R.string.tab_home, Icons.Default.Home),
     Stats("stats", R.string.tab_stats, Icons.Default.Assessment),
     Bills("ledger", R.string.tab_ledger, Icons.AutoMirrored.Filled.ReceiptLong),
-    Mine("settings", R.string.tab_settings, Icons.Default.Devices)
+    Mine("settings", R.string.tab_settings, Icons.Default.Settings)
 }
 
 internal enum class LedgerViewMode(val label: String) {

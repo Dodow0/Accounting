@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -66,7 +67,9 @@ import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Commute
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DateRange
@@ -79,6 +82,7 @@ import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PhoneIphone
 import androidx.compose.material.icons.filled.PlayArrow
@@ -443,6 +447,7 @@ internal fun EntrySheetContentV2(
     var formError by remember { mutableStateOf<String?>(null) }
     var cursorVisible by remember { mutableStateOf(true) }
     var detailsExpanded by remember { mutableStateOf(false) }
+    val contentScrollState = rememberScrollState()
 
     fun clearForm() {
         amount = ""
@@ -484,6 +489,13 @@ internal fun EntrySheetContentV2(
         }
     }
 
+    LaunchedEffect(detailsExpanded) {
+        if (detailsExpanded) {
+            delay(120)
+            contentScrollState.animateScrollTo(contentScrollState.maxValue)
+        }
+    }
+
     val categories = when (selectedType) {
         TransactionType.INCOME -> uiState.incomeCategories
         TransactionType.EXPENSE -> uiState.expenseCategories
@@ -494,6 +506,8 @@ internal fun EntrySheetContentV2(
     }
     val selectedCategory = categories.firstOrNull { it.id == categoryId }
     val amountColor = transactionColor(selectedType)
+    val hasPendingCalculation = hasUnresolvedAmountExpression(amount)
+    val pendingCalculationColor = Color(0xFFF59E0B)
 
     fun submit() {
         val submittedAmount = normalizedAmountInput(amount)
@@ -536,8 +550,9 @@ internal fun EntrySheetContentV2(
 
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
+            .fillMaxWidth()
+            .heightIn(min = 520.dp, max = 760.dp)
+            .navigationBarsPadding()
             .background(MaterialTheme.colorScheme.background)
     ) {
         Surface(
@@ -565,7 +580,11 @@ internal fun EntrySheetContentV2(
                     fontWeight = FontWeight.Bold
                 )
                 TextButton(onClick = ::submit) {
-                    Text("完成", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Text(
+                        "完成",
+                        color = if (hasPendingCalculation) pendingCalculationColor else MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -573,7 +592,7 @@ internal fun EntrySheetContentV2(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(contentScrollState)
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -588,14 +607,33 @@ internal fun EntrySheetContentV2(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.End
                 ) {
-                    Text(
-                        "金额",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (hasPendingCalculation) {
+                            Icon(
+                                Icons.Default.Calculate,
+                                contentDescription = null,
+                                tint = pendingCalculationColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Text(
+                            "金额",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (hasPendingCalculation) pendingCalculationColor else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     Text(
                         "¥${amount.ifBlank { "0" }}${if (cursorVisible) "|" else " "}",
-                        color = if (selectedType == TransactionType.EXPENSE) MaterialTheme.colorScheme.onSurface else amountColor,
+                        color = if (hasPendingCalculation) {
+                            pendingCalculationColor
+                        } else if (selectedType == TransactionType.EXPENSE) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            amountColor
+                        },
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.displaySmall,
@@ -658,7 +696,7 @@ internal fun EntrySheetContentV2(
                     )
                 }
 
-                if (detailsExpanded) {
+                AnimatedVisibility(visible = detailsExpanded) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (selectedType == TransactionType.TRANSFER) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -742,31 +780,90 @@ internal fun EntrySheetContentV2(
                 amount = it
                 formError = null
             },
+            hasPendingCalculation = hasPendingCalculation,
             onConfirm = ::submit
         )
     }
 }
 
+private sealed interface EntryCategoryGridItem {
+    data class Category(val category: CategoryEntity) : EntryCategoryGridItem
+    data object More : EntryCategoryGridItem
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun EntryCategoryGrid(
     categories: List<CategoryEntity>,
     selectedCategoryId: Long?,
     onSelected: (Long) -> Unit
 ) {
-    val rows = categories.take(10).chunked(5)
+    var showAllCategories by remember { mutableStateOf(false) }
+    val hasMore = categories.size > 10
+    val visibleItems = buildList {
+        val visibleCategories = if (hasMore) categories.take(9) else categories.take(10)
+        visibleCategories.forEach { add(EntryCategoryGridItem.Category(it)) }
+        if (hasMore) add(EntryCategoryGridItem.More)
+    }
+    val rows = visibleItems.chunked(5)
+
+    if (showAllCategories) {
+        ModalBottomSheet(onDismissRequest = { showAllCategories = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    "选择分类",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(4),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    contentPadding = PaddingValues(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(categories, key = { it.id }) { category ->
+                        EntryCategoryTile(
+                            category = category,
+                            selected = category.id == selectedCategoryId,
+                            onClick = {
+                                onSelected(category.id)
+                                showAllCategories = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         rows.forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                row.forEach { category ->
-                    EntryCategoryTile(
-                        category = category,
-                        selected = category.id == selectedCategoryId,
-                        onClick = { onSelected(category.id) },
-                        modifier = Modifier.weight(1f)
-                    )
+                row.forEach { item ->
+                    when (item) {
+                        is EntryCategoryGridItem.Category -> EntryCategoryTile(
+                            category = item.category,
+                            selected = item.category.id == selectedCategoryId,
+                            onClick = { onSelected(item.category.id) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        EntryCategoryGridItem.More -> EntryMoreCategoryTile(
+                            onClick = { showAllCategories = true },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
                 repeat(5 - row.size) {
                     Spacer(modifier = Modifier.weight(1f))
@@ -784,35 +881,102 @@ internal fun EntryCategoryTile(
     modifier: Modifier = Modifier
 ) {
     val tint = Color(category.colorArgb)
-    Column(
-        modifier = modifier.clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally
+    Surface(
+        modifier = modifier
+            .height(96.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        color = if (selected) LedgerMint else Color.Transparent,
+        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)) else null
     ) {
-        Surface(
-            modifier = Modifier.size(52.dp),
-            shape = RoundedCornerShape(8.dp),
-            color = if (selected) LedgerMint else tint.copy(alpha = 0.11f),
-            border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.32f)) else null
+        Column(
+            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    categoryIcon(category.iconName),
-                    contentDescription = null,
-                    tint = if (selected) MaterialTheme.colorScheme.primary else tint,
-                    modifier = Modifier.size(26.dp)
-                )
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = if (selected) MaterialTheme.colorScheme.surface else tint.copy(alpha = 0.11f),
+                border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.62f)) else null
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        categoryIcon(category.iconName),
+                        contentDescription = null,
+                        tint = if (selected) MaterialTheme.colorScheme.primary else tint,
+                        modifier = Modifier.size(25.dp)
+                    )
+                }
             }
+            Box(
+                modifier = Modifier.height(13.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (selected) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(12.dp)
+                    )
+                }
+            }
+            Text(
+                category.name,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
         }
-        Spacer(Modifier.height(7.dp))
-        Text(
-            category.name,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center
-        )
+    }
+}
+
+@Composable
+internal fun EntryMoreCategoryTile(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .height(96.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.64f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.MoreHoriz,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(13.dp))
+            Text(
+                "更多...",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 
@@ -1361,8 +1525,18 @@ internal fun WheelPickerColumn(
     onSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(values, selected) {
+        val selectedIndex = values.indexOf(selected)
+        if (selectedIndex >= 0) {
+            listState.scrollToItem((selectedIndex - 1).coerceAtLeast(0))
+        }
+    }
+
     LazyColumn(
         modifier = modifier.height(188.dp),
+        state = listState,
         verticalArrangement = Arrangement.spacedBy(6.dp),
         contentPadding = PaddingValues(vertical = 46.dp)
     ) {
@@ -1414,6 +1588,7 @@ internal fun dateTimeToMillis(
 internal fun AmountKeypad(
     value: String,
     onValueChange: (String) -> Unit,
+    hasPendingCalculation: Boolean = false,
     onConfirm: () -> Unit = {}
 ) {
     val rows = listOf(
@@ -1438,6 +1613,7 @@ internal fun AmountKeypad(
                         AmountKey(
                             label = key,
                             modifier = Modifier.weight(1f),
+                            confirmColor = if (hasPendingCalculation) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary,
                             onClick = {
                                 if (key == "ok") {
                                     onConfirm()
@@ -1457,6 +1633,7 @@ internal fun AmountKeypad(
 internal fun AmountKey(
     label: String,
     modifier: Modifier = Modifier,
+    confirmColor: Color = MaterialTheme.colorScheme.primary,
     onClick: () -> Unit
 ) {
     val isOperator = label in setOf("+", "-", "×", "÷")
@@ -1482,7 +1659,7 @@ internal fun AmountKey(
                 indication = LocalIndication.current,
                 onClick = clickWithFeedback
             ),
-        color = if (isConfirm) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+        color = if (isConfirm) confirmColor else MaterialTheme.colorScheme.surface,
         border = BorderStroke(0.5.dp, LedgerDivider)
     ) {
         Box(contentAlignment = Alignment.Center) {

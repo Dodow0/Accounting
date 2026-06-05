@@ -145,13 +145,17 @@ class AccountingViewModel @Inject constructor(
         )
     }
 
-    private val trendTransactionsFlow =
-        repository.searchTransactions(
-            query = "",
-            startAt = addMonthsMillis(startOfMonthMillis(System.currentTimeMillis()), -5),
-            endAt = addMonthsMillis(startOfMonthMillis(System.currentTimeMillis()), 1),
-            limit = 5_000
-        )
+    private val trendMonthStart = startOfMonthMillis(System.currentTimeMillis())
+    private val trendTransactionsFlow = repository.searchTransactions(
+        query = "",
+        startAt = addMonthsMillis(trendMonthStart, -5),
+        endAt = addMonthsMillis(trendMonthStart, 1),
+        limit = 5_000
+    ).stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(30_000),
+        initialValue = emptyList()
+    )
 
     private val transactionBuckets = combine(
         periodTransactionsFlow,
@@ -390,6 +394,8 @@ class AccountingViewModel @Inject constructor(
 
     fun addAccount(name: String, type: AccountType, initialBalance: String) =
         managementActions.addAccount(name, type, initialBalance)
+
+    fun archiveAccount(accountId: Long) = managementActions.archiveAccount(accountId)
 
     fun deleteTransaction(transactionId: Long) = transactionActions.deleteTransaction(transactionId)
 

@@ -325,6 +325,14 @@ internal class ManagementActions(
         }
     }
 
+    fun archiveAccount(id: Long) {
+        scope.launch {
+            runCatching { repository.archiveAccount(id, true) }
+                .onSuccess { showMessage("账户已删除") }
+                .onFailure { showMessage(it.message ?: "删除账户失败") }
+        }
+    }
+
     fun addTag(name: String) {
         scope.launch {
             runCatching { repository.addTag(name) }

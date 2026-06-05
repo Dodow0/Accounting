@@ -285,11 +285,11 @@ internal fun HomeMonthlySummaryCard(
     Surface(
         modifier = modifier
             .fillMaxWidth(),
-        shape = RoundedCornerShape(0.dp),
+        shape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp),
         color = MaterialTheme.colorScheme.primary
     ) {
         Column(
-            modifier = Modifier.padding(start = 24.dp, top = 28.dp, end = 24.dp, bottom = 34.dp),
+            modifier = Modifier.padding(start = 24.dp, top = 28.dp, end = 24.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             Row(
@@ -355,16 +355,23 @@ internal fun HomeMonthlySummaryCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Row(
+            Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.White.copy(alpha = 0.16f), RoundedCornerShape(8.dp))
-                    .padding(vertical = 14.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = Color.White.copy(alpha = 0.16f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f))
             ) {
-                HomeSummaryMetric("收入", Money(incomeCents).formatPlain(), Color.White.copy(alpha = 0.74f), Modifier.weight(1f))
-                HomeSummaryMetric("支出", Money(expenseCents).formatPlain(), LedgerExpensePink, Modifier.weight(1f))
-                HomeSummaryMetric("笔数", transactions.size.toString(), Color.White, Modifier.weight(1f))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    HomeSummaryMetric("收入", Money(incomeCents).formatPlain(), Color.White.copy(alpha = 0.84f), Modifier.weight(1f))
+                    HomeSummaryMetric("支出", Money(expenseCents).formatPlain(), LedgerExpensePink, Modifier.weight(1f))
+                    HomeSummaryMetric("笔数", transactions.size.toString(), Color.White, Modifier.weight(1f))
+                }
             }
         }
     }
@@ -537,7 +544,10 @@ internal fun AssetMetricPill(
 }
 
 @Composable
-internal fun AccountRow(row: AccountBalanceRow) {
+internal fun AccountRow(
+    row: AccountBalanceRow,
+    onDelete: (() -> Unit)? = null
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -573,6 +583,12 @@ internal fun AccountRow(row: AccountBalanceRow) {
                 Money(row.balanceCents).format(),
                 fontWeight = FontWeight.SemiBold
             )
+            if (onDelete != null) {
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "删除账户")
+                }
+            }
         }
     }
 }

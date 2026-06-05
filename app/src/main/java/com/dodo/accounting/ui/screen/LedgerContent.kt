@@ -399,6 +399,7 @@ internal fun LazyListScope.transactionDayGroups(
                 group.items.forEachIndexed { index, transaction ->
                     TransactionRow(
                         item = transaction,
+                        onClick = onLongPress?.let { openActions -> { openActions(transaction) } },
                         onLongClick = onLongPress?.let { longPress -> { longPress(transaction) } },
                         trailing = {
                             if (showInlineActions) {
@@ -611,9 +612,15 @@ internal fun CalendarDayCell(
         day.inMonth -> MaterialTheme.colorScheme.surface
         else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f)
     }
+    val isToday = day.date == LocalDate.now()
+    val dayTextColor = when {
+        isToday -> Color.White
+        day.inMonth -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Surface(
         modifier = modifier
-            .aspectRatio(0.88f)
+            .heightIn(min = 64.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
         color = container,
@@ -621,13 +628,27 @@ internal fun CalendarDayCell(
     ) {
         Column(
             modifier = Modifier.padding(6.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+            horizontalAlignment = Alignment.Start
         ) {
-            Text(
-                day.date.dayOfMonth.toString(),
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                color = if (day.inMonth) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Box(
+                modifier = Modifier.size(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isToday) {
+                    Surface(
+                        modifier = Modifier.size(24.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    ) {}
+                }
+                Text(
+                    day.date.dayOfMonth.toString(),
+                    fontWeight = if (selected || isToday) FontWeight.Bold else FontWeight.SemiBold,
+                    color = dayTextColor,
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
             group?.let {
                 if (it.expenseCents > 0) {
                     Text(
