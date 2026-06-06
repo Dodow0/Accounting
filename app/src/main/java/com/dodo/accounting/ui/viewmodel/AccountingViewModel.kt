@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -90,6 +91,7 @@ class AccountingViewModel @Inject constructor(
     private val searchType = MutableStateFlow<TransactionType?>(null)
     private val selectedAccountId = MutableStateFlow<Long?>(null)
     private val calendarMonthStartMillis = MutableStateFlow(startOfMonthMillis(System.currentTimeMillis()))
+    private val trendDataEnabled = MutableStateFlow(false)
     private val localState = MutableStateFlow(
         AccountingUiState(isLoading = true)
     )
@@ -145,17 +147,19 @@ class AccountingViewModel @Inject constructor(
         )
     }
 
-    private val trendMonthStart = startOfMonthMillis(System.currentTimeMillis())
-    private val trendTransactionsFlow = repository.searchTransactions(
-        query = "",
-        startAt = addMonthsMillis(trendMonthStart, -5),
-        endAt = addMonthsMillis(trendMonthStart, 1),
-        limit = 5_000
-    ).stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(30_000),
-        initialValue = emptyList()
-    )
+    private val trendTransactionsFlow = trendDataEnabled.flatMapLatest { enabled ->
+        if (!enabled) {
+            flowOf(emptyList())
+        } else {
+            val trendMonthStart = startOfMonthMillis(System.currentTimeMillis())
+            repository.searchTransactions(
+                query = "",
+                startAt = addMonthsMillis(trendMonthStart, -5),
+                endAt = addMonthsMillis(trendMonthStart, 1),
+                limit = 5_000
+            )
+        }
+    }
 
     private val transactionBuckets = combine(
         periodTransactionsFlow,
@@ -286,6 +290,10 @@ class AccountingViewModel @Inject constructor(
         selectedPeriod.value = period
     }
 
+    fun setTrendDataEnabled(enabled: Boolean) {
+        trendDataEnabled.value = enabled
+    }
+
     fun setSearchQuery(query: String) {
         searchQuery.value = query
     }
@@ -396,6 +404,8 @@ class AccountingViewModel @Inject constructor(
         managementActions.addAccount(name, type, initialBalance)
 
     fun archiveAccount(accountId: Long) = managementActions.archiveAccount(accountId)
+
+    fun deleteAccount(accountId: Long) = managementActions.deleteAccount(accountId)
 
     fun deleteTransaction(transactionId: Long) = transactionActions.deleteTransaction(transactionId)
 

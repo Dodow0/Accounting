@@ -97,6 +97,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -180,6 +181,17 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+@Composable
+internal fun FullScreenLoading(
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -248,8 +260,8 @@ internal fun TransactionRow(
                 title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.titleMedium
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleSmall
             )
             Text(
                 subtitle,
@@ -286,6 +298,8 @@ internal fun TransactionActionSheet(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    var confirmDelete by remember { mutableStateOf(false) }
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -309,14 +323,24 @@ internal fun TransactionActionSheet(
                 Spacer(Modifier.width(8.dp))
                 Text("编辑")
             }
+            HorizontalDivider(
+                modifier = Modifier.padding(top = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
             Button(
-                onClick = onDelete,
+                onClick = {
+                    if (confirmDelete) {
+                        onDelete()
+                    } else {
+                        confirmDelete = true
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
             ) {
                 Icon(Icons.Default.Delete, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("删除")
+                Text(if (confirmDelete) "确认删除" else "删除")
             }
             Spacer(Modifier.size(12.dp))
         }
@@ -386,8 +410,7 @@ internal fun CategoryManagementCard(
                             canMoveDown = index < categories.lastIndex,
                             onMoveUp = { viewModel.moveCategory(category.id, -1) },
                             onMoveDown = { viewModel.moveCategory(category.id, 1) },
-                            onEdit = { categoryToEdit = category },
-                            onDelete = { viewModel.deleteCategory(category.id) }
+                            onEdit = { categoryToEdit = category }
                         )
                     }
                 }
@@ -401,6 +424,10 @@ internal fun CategoryManagementCard(
             onSave = { name, iconName, colorArgb ->
                 viewModel.updateCategory(category.id, name, iconName, colorArgb)
                 categoryToEdit = null
+            },
+            onDelete = {
+                viewModel.deleteCategory(category.id)
+                categoryToEdit = null
             }
         )
     }
@@ -413,11 +440,12 @@ internal fun CategoryManagementRow(
     canMoveDown: Boolean,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onEdit: () -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onEdit),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -439,17 +467,32 @@ internal fun CategoryManagementRow(
                 fontFamily = FontFamily.Monospace
             )
         }
-        IconButton(onClick = onMoveUp, enabled = canMoveUp) {
-            Icon(Icons.Default.ArrowUpward, contentDescription = "上移分类")
-        }
-        IconButton(onClick = onMoveDown, enabled = canMoveDown) {
-            Icon(Icons.Default.ArrowDownward, contentDescription = "下移分类")
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            IconButton(
+                onClick = onMoveUp,
+                enabled = canMoveUp,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.ArrowUpward,
+                    contentDescription = "上移分类",
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            IconButton(
+                onClick = onMoveDown,
+                enabled = canMoveDown,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.ArrowDownward,
+                    contentDescription = "下移分类",
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
         IconButton(onClick = onEdit) {
             Icon(Icons.Default.Edit, contentDescription = "编辑分类")
-        }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Default.Delete, contentDescription = "归档分类")
         }
     }
 }
@@ -459,11 +502,13 @@ internal fun CategoryManagementRow(
 internal fun CategoryEditDialog(
     category: CategoryEntity,
     onDismiss: () -> Unit,
-    onSave: (String, String, Long) -> Unit
+    onSave: (String, String, Long) -> Unit,
+    onDelete: () -> Unit
 ) {
     var name by remember(category.id) { mutableStateOf(category.name) }
     var iconName by remember(category.id) { mutableStateOf(category.iconName) }
     var colorArgb by remember(category.id) { mutableStateOf(category.colorArgb) }
+    var confirmDelete by remember(category.id) { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -528,6 +573,22 @@ internal fun CategoryEditDialog(
                         )
                     ) {}
                 }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Button(
+                onClick = {
+                    if (confirmDelete) {
+                        onDelete()
+                    } else {
+                        confirmDelete = true
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (confirmDelete) "确认删除" else "删除分类")
             }
             Spacer(Modifier.height(14.dp))
         }
@@ -686,15 +747,46 @@ internal fun SummaryMetric(
 @Composable
 internal fun ExpenseDonutChart(
     rows: List<CategorySummary>,
-    totalCents: Long
+    totalCents: Long,
+    categories: List<CategoryEntity>
 ) {
+    val maxLegendItems = 6
+    val directRows = if (rows.size > maxLegendItems) rows.take(maxLegendItems - 1) else rows
+    val remainingRows = rows.drop(directRows.size)
+    val fallbackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.56f)
+    val remainingColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
+    fun categoryColor(row: CategorySummary): Color {
+        return categories.firstOrNull { it.id == row.categoryId }
+            ?.let { Color(it.colorArgb) }
+            ?: fallbackColor
+    }
+    val segments = buildList {
+        directRows.forEach { row ->
+            add(
+                DonutSegment(
+                    label = row.categoryName ?: "未分类",
+                    amountCents = row.amountCents,
+                    color = categoryColor(row)
+                )
+            )
+        }
+        if (remainingRows.isNotEmpty()) {
+            add(
+                DonutSegment(
+                    label = "其余 ${remainingRows.size} 类",
+                    amountCents = remainingRows.sumOf { it.amountCents },
+                    color = remainingColor
+                )
+            )
+        }
+    }
+
     LedgerCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            val palette = donutPalette()
             Box(contentAlignment = Alignment.Center) {
                 Canvas(modifier = Modifier.size(132.dp)) {
                     val strokeWidth = 18.dp.toPx()
@@ -707,10 +799,10 @@ internal fun ExpenseDonutChart(
                     )
                     if (totalCents > 0) {
                         var startAngle = -90f
-                        rows.forEachIndexed { index, row ->
-                            val sweep = row.amountCents.toFloat() / totalCents.toFloat() * 360f
+                        segments.forEach { segment ->
+                            val sweep = segment.amountCents.toFloat() / totalCents.toFloat() * 360f
                             drawArc(
-                                color = palette[index % palette.size],
+                                color = segment.color,
                                 startAngle = startAngle,
                                 sweepAngle = sweep.coerceAtLeast(1.4f),
                                 useCenter = false,
@@ -747,7 +839,7 @@ internal fun ExpenseDonutChart(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                    rows.take(4).forEachIndexed { index, row ->
+                    segments.forEach { segment ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -760,17 +852,17 @@ internal fun ExpenseDonutChart(
                                 Surface(
                                     modifier = Modifier.size(10.dp),
                                     shape = RoundedCornerShape(8.dp),
-                                    color = palette[index % palette.size]
+                                    color = segment.color
                                 ) {}
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    row.categoryName ?: "未分类",
+                                    segment.label,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
                             Text(
-                                "${categoryPercent(row.amountCents, totalCents)}%",
+                                "${categoryPercent(segment.amountCents, totalCents)}%",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontFamily = FontFamily.Monospace
                             )
@@ -781,6 +873,12 @@ internal fun ExpenseDonutChart(
         }
     }
 }
+
+private data class DonutSegment(
+    val label: String,
+    val amountCents: Long,
+    val color: Color
+)
 
 @Composable
 internal fun CategorySummaryRow(
@@ -1233,13 +1331,3 @@ internal fun categoryPercent(cents: Long, totalCents: Long): Int {
     if (totalCents <= 0) return 0
     return ((cents.toDouble() / totalCents.toDouble()) * 100).toInt()
 }
-
-@Composable
-internal fun donutPalette(): List<Color> = listOf(
-    MaterialTheme.colorScheme.primary,
-    MaterialTheme.colorScheme.secondary,
-    MaterialTheme.colorScheme.tertiary,
-    MaterialTheme.colorScheme.onSurfaceVariant,
-    MaterialTheme.colorScheme.primary.copy(alpha = 0.68f),
-    MaterialTheme.colorScheme.secondary.copy(alpha = 0.68f)
-)

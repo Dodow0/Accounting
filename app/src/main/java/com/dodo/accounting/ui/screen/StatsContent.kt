@@ -67,6 +67,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Commute
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DateRange
@@ -190,6 +191,11 @@ internal fun StatsScreen(
     val expenseRows = uiState.summary?.expenseByCategory.orEmpty()
     val totalExpenseCents = expenseRows.sumOf { it.amountCents }
 
+    if (uiState.isLoading) {
+        FullScreenLoading()
+        return
+    }
+
     BackHandler(enabled = selectedCategory != null) {
         selectedCategory = null
     }
@@ -248,7 +254,11 @@ internal fun StatsOverviewContent(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     StatsSummaryCard(uiState)
-                    ExpenseDonutChart(rows = expenseRows, totalCents = totalExpenseCents)
+                    ExpenseDonutChart(
+                        rows = expenseRows,
+                        totalCents = totalExpenseCents,
+                        categories = uiState.expenseCategories
+                    )
                     LedgerCard {
                         SectionHeader("支出分类", "${expenseRows.size} 类")
                         if (expenseRows.isEmpty()) {
@@ -564,8 +574,12 @@ internal fun CategoryBudgetRow(
                 placeholder = "预算",
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
             )
-            FilledTonalButton(onClick = { onSetBudget(amount) }) {
-                Text("设")
+            IconButton(onClick = { onSetBudget(amount) }) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = "设置预算",
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
         }
         LinearProgressIndicator(

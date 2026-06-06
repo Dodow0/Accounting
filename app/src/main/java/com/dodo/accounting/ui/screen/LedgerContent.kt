@@ -189,6 +189,12 @@ internal fun LedgerScreen(
     var selectedCategoryId by remember { mutableStateOf<Long?>(null) }
     var actionTarget by remember { mutableStateOf<TransactionWithDetails?>(null) }
     var viewMode by remember { mutableStateOf(LedgerViewMode.List) }
+
+    if (uiState.isLoading) {
+        FullScreenLoading()
+        return
+    }
+
     val displayedTransactions = uiState.searchResults.filter { transaction ->
         selectedCategoryId == null || transaction.transaction.categoryId == selectedCategoryId
     }
@@ -357,15 +363,20 @@ internal fun LedgerTextFilter(
     label: String,
     onClick: () -> Unit
 ) {
-    Text(
-        text = label,
+    Box(
         modifier = Modifier
+            .heightIn(min = 48.dp)
             .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
-        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        style = MaterialTheme.typography.bodyMedium,
-        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-    )
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+        )
+    }
 }
 
 internal fun LazyListScope.transactionDayGroups(
@@ -380,14 +391,30 @@ internal fun LazyListScope.transactionDayGroups(
     val groups = transactions.groupedByDay()
     if (groups.isEmpty()) {
         item {
-            Text(
-                emptyText,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 24.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium
-            )
+                    .then(groupModifier)
+                    .padding(vertical = 42.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        Icons.Default.AccountBalanceWallet,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.54f),
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Text(
+                        emptyText,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
         }
         return
     }
@@ -448,14 +475,13 @@ internal fun TransactionDayHeader(group: TransactionDayGroup) {
     ) {
         Text(
             "$dayLabel · ${group.date.format(DateTimeFormatter.ofPattern("M月d日", Locale.CHINA))}",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             summaryParts.joinToString(" · ").ifBlank { "无收支" },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontFamily = FontFamily.Monospace
         )
     }

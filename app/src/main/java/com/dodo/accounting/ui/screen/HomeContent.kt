@@ -55,6 +55,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Label
@@ -67,6 +68,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Commute
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DateRange
@@ -89,6 +91,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Wallet
 import androidx.compose.material.icons.filled.Work
@@ -190,6 +193,12 @@ internal fun HomeScreen(
     val monthStart = localDateFromMillis(uiState.calendarMonthStartMillis)
     val monthlyTransactions = uiState.calendarMonthTransactions
     val listState = rememberLazyListState()
+
+    if (uiState.isLoading) {
+        FullScreenLoading()
+        return
+    }
+
     val collapseProgress by remember {
         derivedStateOf {
             if (listState.firstVisibleItemIndex > 0) {
@@ -304,28 +313,26 @@ internal fun HomeMonthlySummaryCard(
                     fontWeight = FontWeight.SemiBold
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "◀",
-                        modifier = Modifier
-                            .clickable(onClick = onPreviousMonth)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = Color.White.copy(alpha = 0.74f),
-                        fontWeight = FontWeight.Bold
-                    )
+                    IconButton(onClick = onPreviousMonth) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "上月",
+                            tint = Color.White.copy(alpha = 0.74f)
+                        )
+                    }
                     Text(
                         "${monthStart.year}年${monthStart.monthValue}月",
                         color = Color.White,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        "▶",
-                        modifier = Modifier
-                            .clickable(onClick = onNextMonth)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = Color.White.copy(alpha = 0.74f),
-                        fontWeight = FontWeight.Bold
-                    )
+                    IconButton(onClick = onNextMonth) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "下月",
+                            tint = Color.White.copy(alpha = 0.74f)
+                        )
+                    }
                 }
                 Icon(
                     Icons.Default.Search,
@@ -436,12 +443,22 @@ internal fun HomeBudgetProgress(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    "◎ 月度预算",
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.TrackChanges,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Text(
+                        "月度预算",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
                 Text(
                     if (budgetCents > 0) "已用 ${(ratio * 100).toInt()}% · 余 ${Money(remainingCents).format()}" else "未设置",
                     color = MaterialTheme.colorScheme.onSurface,
@@ -548,6 +565,15 @@ internal fun AccountRow(
     row: AccountBalanceRow,
     onDelete: (() -> Unit)? = null
 ) {
+    var confirmDelete by remember(row.account.id) { mutableStateOf(false) }
+
+    LaunchedEffect(confirmDelete) {
+        if (confirmDelete) {
+            delay(2400)
+            confirmDelete = false
+        }
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -585,8 +611,21 @@ internal fun AccountRow(
             )
             if (onDelete != null) {
                 Spacer(Modifier.width(4.dp))
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "删除账户")
+                IconButton(
+                    onClick = {
+                        if (confirmDelete) {
+                            confirmDelete = false
+                            onDelete()
+                        } else {
+                            confirmDelete = true
+                        }
+                    }
+                ) {
+                    Icon(
+                        if (confirmDelete) Icons.Default.Check else Icons.Default.Delete,
+                        contentDescription = if (confirmDelete) "确认删除账户" else "删除账户",
+                        tint = if (confirmDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }

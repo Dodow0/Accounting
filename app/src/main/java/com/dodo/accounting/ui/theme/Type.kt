@@ -9,21 +9,26 @@ val AccountingTypography = Typography(
     displaySmall = TextStyle(
         fontSize = 32.sp,
         lineHeight = 38.sp,
-        fontWeight = FontWeight.Medium
+        fontWeight = FontWeight.Bold
     ),
     headlineSmall = TextStyle(
         fontSize = 24.sp,
         lineHeight = 30.sp,
-        fontWeight = FontWeight.Medium
+        fontWeight = FontWeight.SemiBold
     ),
     titleLarge = TextStyle(
         fontSize = 20.sp,
         lineHeight = 26.sp,
-        fontWeight = FontWeight.Medium
+        fontWeight = FontWeight.SemiBold
     ),
     titleMedium = TextStyle(
         fontSize = 16.sp,
         lineHeight = 22.sp,
+        fontWeight = FontWeight.SemiBold
+    ),
+    titleSmall = TextStyle(
+        fontSize = 15.sp,
+        lineHeight = 20.sp,
         fontWeight = FontWeight.Medium
     ),
     bodyMedium = TextStyle(
@@ -32,8 +37,8 @@ val AccountingTypography = Typography(
         fontWeight = FontWeight.Normal
     ),
     bodySmall = TextStyle(
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
+        fontSize = 13.sp,
+        lineHeight = 18.sp,
         fontWeight = FontWeight.Normal
     ),
     labelMedium = TextStyle(

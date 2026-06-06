@@ -197,6 +197,11 @@ internal fun MineScreen(
     var page by remember { mutableStateOf(MinePage.Menu) }
     var childDialogOpen by remember { mutableStateOf(false) }
 
+    if (uiState.isLoading) {
+        FullScreenLoading()
+        return
+    }
+
     BackHandler(enabled = page != MinePage.Menu && !childDialogOpen) {
         page = MinePage.Menu
     }
@@ -223,7 +228,7 @@ internal fun MineMenu(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item {
             Text(
@@ -249,11 +254,11 @@ internal fun MineMenuRow(
 ) {
     LedgerPanelSurface(onClick = onClick) {
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(36.dp),
                 shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
             ) {
@@ -326,7 +331,7 @@ internal fun AccountManagementPage(
         items(activeAccountRows, key = { it.account.id }) { row ->
             AccountRow(
                 row = row,
-                onDelete = { viewModel.archiveAccount(row.account.id) }
+                onDelete = { viewModel.deleteAccount(row.account.id) }
             )
         }
     }
@@ -496,132 +501,6 @@ internal fun AboutPage(
         item { MineBackHeader("关于", onBack) }
         item {
             InfoCard("个人账本 · 本地优先 · 支持账户、分类、预算、周期账单、导入导出和回收站。")
-        }
-    }
-}
-
-@Composable
-internal fun TrashAndExportScreen(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel
-) {
-    val context = LocalContext.current
-    val jsonSaveLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
-        if (uri != null) {
-            context.contentResolver.openOutputStream(uri)?.use { output ->
-                output.write(uiState.exportContent.toByteArray(Charsets.UTF_8))
-            }
-            Toast.makeText(context, "JSON 已保存", Toast.LENGTH_SHORT).show()
-        }
-    }
-    val csvSaveLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/csv")
-    ) { uri ->
-        if (uri != null) {
-            context.contentResolver.openOutputStream(uri)?.use { output ->
-                output.write(uiState.exportContent.toByteArray(Charsets.UTF_8))
-            }
-            Toast.makeText(context, "CSV 已保存", Toast.LENGTH_SHORT).show()
-        }
-    }
-    val jsonImportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            val content = context.contentResolver.openInputStream(uri)?.use { input ->
-                input.bufferedReader(Charsets.UTF_8).readText()
-            }
-            if (content != null) {
-                viewModel.importJson(content)
-            }
-        }
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Card(shape = RoundedCornerShape(8.dp)) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    SectionHeader("导出备份", "JSON / CSV")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { viewModel.export(ExportFormat.JSON) }) {
-                            Icon(Icons.Default.Download, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("生成 JSON")
-                        }
-                        FilledTonalButton(onClick = { viewModel.export(ExportFormat.CSV) }) {
-                            Icon(Icons.Default.Download, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("生成 CSV")
-                        }
-                    }
-                    FilledTonalButton(
-                        onClick = { jsonImportLauncher.launch(arrayOf("application/json", "text/*")) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Upload, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("导入 JSON 备份")
-                    }
-                    if (uiState.exportPreview.isNotBlank()) {
-                        FilledTonalButton(
-                            onClick = {
-                                when (uiState.exportFormat) {
-                                    ExportFormat.JSON -> jsonSaveLauncher.launch("accounting-backup.json")
-                                    ExportFormat.CSV -> csvSaveLauncher.launch("accounting-transactions.csv")
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("保存到文件")
-                        }
-                        Text(
-                            uiState.exportPreview,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 220.dp)
-                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                                .padding(10.dp)
-                                .verticalScroll(rememberScrollState()),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-            }
-        }
-        item {
-            CategoryManagementCard(uiState, viewModel)
-        }
-        item {
-            TagManagementCard(uiState, viewModel)
-        }
-        item {
-            SectionHeader("回收站", "${uiState.trash.size} 条")
-        }
-        items(uiState.trash, key = { it.transaction.id }) { transaction ->
-            TransactionRow(
-                item = transaction,
-                trailing = {
-                    Row {
-                        IconButton(onClick = { viewModel.restoreTransaction(transaction.transaction.id) }) {
-                            Icon(Icons.Default.Restore, contentDescription = "恢复")
-                        }
-                        IconButton(onClick = { viewModel.permanentlyDeleteTransaction(transaction.transaction.id) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "彻底删除")
-                        }
-                    }
-                }
-            )
         }
     }
 }

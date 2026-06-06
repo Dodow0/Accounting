@@ -333,6 +333,14 @@ internal class ManagementActions(
         }
     }
 
+    fun deleteAccount(id: Long) {
+        scope.launch {
+            runCatching { repository.deleteAccount(id) }
+                .onSuccess { showMessage("账户已删除") }
+                .onFailure { showMessage(it.message ?: "删除账户失败") }
+        }
+    }
+
     fun addTag(name: String) {
         scope.launch {
             runCatching { repository.addTag(name) }

@@ -21,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -37,7 +38,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -182,250 +182,6 @@ import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-
-
-@Composable
-internal fun EntrySheetContent(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
-    onDone: () -> Unit
-) {
-    val editing = uiState.editingTransaction
-    var selectedType by remember { mutableStateOf(TransactionType.EXPENSE) }
-    var amount by remember { mutableStateOf("") }
-    var accountId by remember { mutableStateOf<Long?>(null) }
-    var fromAccountId by remember { mutableStateOf<Long?>(null) }
-    var toAccountId by remember { mutableStateOf<Long?>(null) }
-    var categoryId by remember { mutableStateOf<Long?>(null) }
-    var merchant by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
-    var selectedTagIds by remember { mutableStateOf(setOf<Long>()) }
-    var occurredAt by remember { mutableStateOf(System.currentTimeMillis()) }
-    var formError by remember { mutableStateOf<String?>(null) }
-    var cursorVisible by remember { mutableStateOf(true) }
-
-    fun clearForm() {
-        amount = ""
-        merchant = ""
-        note = ""
-        formError = null
-        selectedTagIds = emptySet()
-        categoryId = null
-        occurredAt = System.currentTimeMillis()
-    }
-
-    LaunchedEffect(editing?.transaction?.id) {
-        if (editing != null) {
-            val transaction = editing.transaction
-            selectedType = transaction.type
-            amount = Money(transaction.amountCents).formatPlain()
-            accountId = transaction.accountId
-            fromAccountId = transaction.fromAccountId
-            toAccountId = transaction.toAccountId
-            categoryId = transaction.categoryId
-            merchant = transaction.merchant
-            note = transaction.note
-            selectedTagIds = editing.tags.map { it.id }.toSet()
-            occurredAt = transaction.occurredAt
-        } else {
-            clearForm()
-        }
-    }
-
-    val categories = when (selectedType) {
-        TransactionType.INCOME -> uiState.incomeCategories
-        TransactionType.EXPENSE -> uiState.expenseCategories
-        else -> emptyList()
-    }
-
-    fun submit() {
-        val submittedAmount = normalizedAmountInput(amount)
-        val validationError = validateEntryDraft(
-            type = selectedType,
-            amount = submittedAmount,
-            accountId = accountId,
-            fromAccountId = fromAccountId,
-            toAccountId = toAccountId
-        )
-        if (validationError != null) {
-            formError = validationError
-            return
-        }
-        if (editing == null) {
-            when (selectedType) {
-                TransactionType.EXPENSE -> viewModel.addExpense(submittedAmount, accountId, categoryId, merchant, note, selectedTagIds.toList(), occurredAt)
-                TransactionType.INCOME -> viewModel.addIncome(submittedAmount, accountId, categoryId, merchant, note, selectedTagIds.toList(), occurredAt)
-                TransactionType.TRANSFER -> viewModel.addTransfer(submittedAmount, fromAccountId, toAccountId, note, selectedTagIds.toList(), occurredAt)
-                TransactionType.BALANCE_ADJUSTMENT -> viewModel.addBalanceAdjustment(submittedAmount, accountId, note, selectedTagIds.toList(), occurredAt)
-            }
-            clearForm()
-        } else {
-            viewModel.saveEditedTransaction(
-                transactionId = editing.transaction.id,
-                type = selectedType,
-                amount = submittedAmount,
-                accountId = accountId,
-                fromAccountId = fromAccountId,
-                toAccountId = toAccountId,
-                categoryId = categoryId,
-                merchant = merchant,
-                note = note,
-                tagIds = selectedTagIds.toList(),
-                occurredAt = occurredAt
-            )
-        }
-        onDone()
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 720.dp)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Card(shape = RoundedCornerShape(8.dp)) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        if (editing == null) "新增流水" else "编辑流水",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    if (editing != null) {
-                        FilledTonalButton(
-                            onClick = {
-                                viewModel.cancelEditTransaction()
-                                clearForm()
-                            }
-                        ) {
-                            Text("取消")
-                        }
-                    }
-                }
-                TypeSelector(selectedType = selectedType, onTypeSelected = {
-                    selectedType = it
-                    categoryId = null
-                })
-                DateTimeSelector(
-                    occurredAt = occurredAt,
-                    onChanged = { occurredAt = it }
-                )
-                MinimalInputLine(
-                    value = amount,
-                    onValueChange = {},
-                    placeholder = "金额",
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                AmountKeypad(
-                    value = amount,
-                    onValueChange = { amount = it }
-                )
-                if (selectedType == TransactionType.TRANSFER) {
-                    AccountPickerField(
-                        label = "转出账户",
-                        accounts = uiState.activeAccounts,
-                        selectedAccountId = fromAccountId,
-                        onSelected = { fromAccountId = it }
-                    )
-                    AccountPickerField(
-                        label = "转入账户",
-                        accounts = uiState.activeAccounts,
-                        selectedAccountId = toAccountId,
-                        onSelected = { toAccountId = it }
-                    )
-                } else {
-                    AccountPickerField(
-                        label = "资产账户",
-                        accounts = uiState.activeAccounts,
-                        selectedAccountId = accountId,
-                        onSelected = { accountId = it }
-                    )
-                }
-                if (categories.isNotEmpty()) {
-                    CategoryPickerField(
-                        label = "分类",
-                        categories = categories,
-                        selectedCategoryId = categoryId,
-                        onSelected = { categoryId = it }
-                    )
-                }
-                if (uiState.tags.isNotEmpty()) {
-                    TagSelector(
-                        tags = uiState.tags,
-                        selectedTagIds = selectedTagIds,
-                        onToggle = { tagId ->
-                            selectedTagIds = if (tagId in selectedTagIds) {
-                                selectedTagIds - tagId
-                            } else {
-                                selectedTagIds + tagId
-                            }
-                        }
-                    )
-                }
-                if (selectedType != TransactionType.TRANSFER && selectedType != TransactionType.BALANCE_ADJUSTMENT) {
-                    MinimalInputLine(
-                        value = merchant,
-                        onValueChange = { merchant = it },
-                        placeholder = "商户",
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                }
-                MinimalInputLine(
-                    value = note,
-                    onValueChange = { note = it },
-                    placeholder = "备注",
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = false,
-                    minLines = 2
-                )
-                Button(
-                    onClick = {
-                        val submittedAmount = normalizedAmountInput(amount)
-                        if (editing == null) {
-                            when (selectedType) {
-                                TransactionType.EXPENSE -> viewModel.addExpense(submittedAmount, accountId, categoryId, merchant, note, selectedTagIds.toList(), occurredAt)
-                                TransactionType.INCOME -> viewModel.addIncome(submittedAmount, accountId, categoryId, merchant, note, selectedTagIds.toList(), occurredAt)
-                                TransactionType.TRANSFER -> viewModel.addTransfer(submittedAmount, fromAccountId, toAccountId, note, selectedTagIds.toList(), occurredAt)
-                                TransactionType.BALANCE_ADJUSTMENT -> viewModel.addBalanceAdjustment(submittedAmount, accountId, note, selectedTagIds.toList(), occurredAt)
-                            }
-                            clearForm()
-                        } else {
-                            viewModel.saveEditedTransaction(
-                                transactionId = editing.transaction.id,
-                                type = selectedType,
-                                amount = submittedAmount,
-                                accountId = accountId,
-                                fromAccountId = fromAccountId,
-                                toAccountId = toAccountId,
-                                categoryId = categoryId,
-                                merchant = merchant,
-                                note = note,
-                                tagIds = selectedTagIds.toList(),
-                                occurredAt = occurredAt
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(if (editing == null) Icons.Default.Add else Icons.Default.Edit, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (editing == null) "保存记录" else "保存修改")
-                }
-            }
-        }
-    }
-}
 
 @Composable
 internal fun EntrySheetContentV2(
@@ -827,8 +583,8 @@ internal fun EntryCategoryGrid(
                         .fillMaxWidth()
                         .heightIn(max = 420.dp),
                     contentPadding = PaddingValues(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(categories, key = { it.id }) { category ->
                         EntryCategoryTile(
@@ -845,11 +601,11 @@ internal fun EntryCategoryGrid(
         }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         rows.forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 row.forEach { item ->
                     when (item) {
@@ -881,10 +637,15 @@ internal fun EntryCategoryTile(
     modifier: Modifier = Modifier
 ) {
     val tint = Color(category.colorArgb)
+    val interactionSource = remember { MutableInteractionSource() }
     Surface(
         modifier = modifier
-            .height(96.dp)
-            .clickable(onClick = onClick),
+            .height(88.dp)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
         shape = RoundedCornerShape(8.dp),
         color = if (selected) LedgerMint else Color.Transparent,
         border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)) else null
@@ -894,7 +655,9 @@ internal fun EntryCategoryTile(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Surface(
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier
+                    .size(44.dp)
+                    .indication(interactionSource, LocalIndication.current),
                 shape = RoundedCornerShape(8.dp),
                 color = if (selected) MaterialTheme.colorScheme.surface else tint.copy(alpha = 0.11f),
                 border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.62f)) else null
@@ -904,7 +667,7 @@ internal fun EntryCategoryTile(
                         categoryIcon(category.iconName),
                         contentDescription = null,
                         tint = if (selected) MaterialTheme.colorScheme.primary else tint,
-                        modifier = Modifier.size(25.dp)
+                        modifier = Modifier.size(23.dp)
                     )
                 }
             }
@@ -941,7 +704,7 @@ internal fun EntryMoreCategoryTile(
 ) {
     Surface(
         modifier = modifier
-            .height(96.dp)
+            .height(88.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.64f),
@@ -952,7 +715,7 @@ internal fun EntryMoreCategoryTile(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Surface(
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier.size(44.dp),
                 shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.surface,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -962,7 +725,7 @@ internal fun EntryMoreCategoryTile(
                         Icons.Default.MoreHoriz,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
@@ -1066,15 +829,6 @@ internal fun MinimalInputLine(
     }
 }
 
-internal data class QuickEntryDraft(
-    val type: TransactionType,
-    val amount: String,
-    val accountId: Long?,
-    val categoryId: Long?,
-    val merchant: String,
-    val occurredAt: Long
-)
-
 internal fun selectedAccountName(
     accounts: List<AccountEntity>,
     selectedAccountId: Long?
@@ -1142,148 +896,6 @@ internal fun validateEntryDraft(
         }
         TransactionType.BALANCE_ADJUSTMENT -> if (accountId == null) "请选择账户" else null
     }
-}
-
-internal fun parseQuickEntry(
-    input: String,
-    uiState: AccountingUiState
-): QuickEntryDraft? {
-    val text = input.trim()
-    val amount = extractQuickEntryAmount(text)
-        ?: return null
-    val type = if (listOf("收入", "工资", "薪资", "奖金", "报销", "到账").any { text.contains(it) }) {
-        TransactionType.INCOME
-    } else {
-        TransactionType.EXPENSE
-    }
-    val account = findQuickEntryAccount(text, uiState.activeAccounts) ?: uiState.activeAccounts.firstOrNull()
-    val categories = if (type == TransactionType.INCOME) uiState.incomeCategories else uiState.expenseCategories
-    val category = findQuickEntryCategory(text, categories)
-    val occurredAt = parseQuickEntryTime(text)
-    val merchant = stripQuickEntryMeta(text, amount, account, category)
-        .trim()
-        .ifBlank { category?.name ?: transactionLabel(type) }
-
-    return QuickEntryDraft(
-        type = type,
-        amount = amount,
-        accountId = account?.id,
-        categoryId = category?.id,
-        merchant = merchant,
-        occurredAt = occurredAt
-    )
-}
-
-internal fun extractQuickEntryAmount(text: String): String? {
-    val withoutDateTime = text
-        .replace(Regex("""\d{4}[年/-]\d{1,2}[月/-]\d{1,2}日?"""), " ")
-        .replace(Regex("""\d{1,2}月\d{1,2}日?"""), " ")
-        .replace(Regex("""\d{1,2}/\d{1,2}"""), " ")
-        .replace(Regex("""\d{1,2}:\d{1,2}"""), " ")
-        .replace(Regex("""\d{1,2}点(?:\d{1,2}分?)?"""), " ")
-    return Regex("""\d+(?:\.\d{1,2})?""")
-        .findAll(withoutDateTime)
-        .lastOrNull()
-        ?.value
-}
-
-internal fun findQuickEntryAccount(
-    text: String,
-    accounts: List<AccountEntity>
-): AccountEntity? {
-    return accounts.firstOrNull { account ->
-        text.contains(account.name, ignoreCase = true)
-    } ?: accounts.firstOrNull { account ->
-        quickAccountAliases(account).any { alias -> text.contains(alias, ignoreCase = true) }
-    }
-}
-
-internal fun quickAccountAliases(account: AccountEntity): List<String> {
-    return when {
-        account.name.contains("微信") -> listOf("微信", "wx")
-        account.name.contains("支付宝") -> listOf("支付宝", "花呗")
-        account.type == AccountType.CASH -> listOf("现金")
-        account.type == AccountType.BANK_CARD -> listOf("银行卡", "银行", "储蓄卡")
-        account.type == AccountType.CREDIT -> listOf("信用卡")
-        account.type == AccountType.TRANSIT_CARD -> listOf("公交卡", "交通卡")
-        else -> emptyList()
-    }
-}
-
-internal fun findQuickEntryCategory(
-    text: String,
-    categories: List<CategoryEntity>
-): CategoryEntity? {
-    return categories.firstOrNull { category ->
-        text.contains(category.name, ignoreCase = true)
-    } ?: categories.firstOrNull { category ->
-        quickCategoryAliases(category.name).any { alias -> text.contains(alias, ignoreCase = true) }
-    }
-}
-
-internal fun quickCategoryAliases(categoryName: String): List<String> {
-    return when (categoryName) {
-        "餐饮" -> listOf("早餐", "早饭", "午饭", "午餐", "晚饭", "晚餐", "外卖", "咖啡", "奶茶", "餐厅", "吃饭")
-        "交通" -> listOf("地铁", "公交", "打车", "出租", "高铁", "火车", "机票", "停车", "加油")
-        "购物" -> listOf("购物", "超市", "淘宝", "京东", "拼多多", "买了", "采购")
-        "数码服务" -> listOf("会员", "订阅", "软件", "手机", "流量", "宽带", "数码")
-        "生活缴费" -> listOf("电费", "水费", "燃气", "物业", "房租", "话费", "缴费")
-        "工资" -> listOf("工资", "薪资", "薪水", "奖金")
-        "优惠/赠送" -> listOf("红包", "优惠", "赠送", "返现")
-        "其他收入" -> listOf("收入", "报销", "到账")
-        else -> emptyList()
-    }
-}
-
-internal fun stripQuickEntryMeta(
-    text: String,
-    amount: String,
-    account: AccountEntity?,
-    category: CategoryEntity?
-): String {
-    val withoutDateTime = text
-        .replace(Regex("""\d{4}[年/-]\d{1,2}[月/-]\d{1,2}日?"""), "")
-        .replace(Regex("""\d{1,2}月\d{1,2}日?"""), "")
-        .replace(Regex("""\d{1,2}/\d{1,2}"""), "")
-        .replace(Regex("""\d{1,2}:\d{1,2}"""), "")
-        .replace(Regex("""\d{1,2}点(?:\d{1,2}分?)?"""), "")
-    return withoutDateTime
-        .replace(amount, "")
-        .replace("今天", "")
-        .replace("昨天", "")
-        .replace("前天", "")
-        .replace("明天", "")
-        .let { raw ->
-            val withoutAccount = account?.let { raw.replace(it.name, "") } ?: raw
-            category?.let { withoutAccount.replace(it.name, "") } ?: withoutAccount
-        }
-        .replace("收入", "")
-        .replace("支出", "")
-}
-
-internal fun parseQuickEntryTime(text: String): Long {
-    val calendar = Calendar.getInstance()
-    val absoluteDate = Regex("""(?:(\d{4})[年/-])?(\d{1,2})[月/-](\d{1,2})日?""").find(text)
-    if (absoluteDate != null) {
-        val year = absoluteDate.groupValues[1].takeIf { it.isNotBlank() }?.toInt()
-            ?: calendar.get(Calendar.YEAR)
-        val month = absoluteDate.groupValues[2].toInt()
-        val day = absoluteDate.groupValues[3].toInt()
-        calendar.set(Calendar.YEAR, year)
-        calendar.set(Calendar.MONTH, month - 1)
-        calendar.set(Calendar.DAY_OF_MONTH, day)
-    } else when {
-        text.contains("前天") -> calendar.add(Calendar.DAY_OF_MONTH, -2)
-        text.contains("昨天") -> calendar.add(Calendar.DAY_OF_MONTH, -1)
-        text.contains("明天") -> calendar.add(Calendar.DAY_OF_MONTH, 1)
-    }
-    Regex("""(\d{1,2})(?::|点)(\d{1,2})?分?""").find(text)?.let { match ->
-        calendar.set(Calendar.HOUR_OF_DAY, match.groupValues[1].toInt().coerceIn(0, 23))
-        calendar.set(Calendar.MINUTE, match.groupValues[2].takeIf { it.isNotBlank() }?.toInt()?.coerceIn(0, 59) ?: 0)
-    }
-    calendar.set(Calendar.SECOND, 0)
-    calendar.set(Calendar.MILLISECOND, 0)
-    return calendar.timeInMillis
 }
 
 @Composable
@@ -1538,7 +1150,7 @@ internal fun WheelPickerColumn(
         modifier = modifier.height(188.dp),
         state = listState,
         verticalArrangement = Arrangement.spacedBy(6.dp),
-        contentPadding = PaddingValues(vertical = 46.dp)
+        contentPadding = PaddingValues(vertical = 30.dp)
     ) {
         items(values, key = { it }) { value ->
             val isSelected = value == selected
@@ -1652,14 +1264,14 @@ internal fun AmountKey(
 
     Surface(
         modifier = modifier
-            .height(66.dp)
+            .height(58.dp)
             .scale(scale)
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
                 onClick = clickWithFeedback
             ),
-        color = if (isConfirm) confirmColor else MaterialTheme.colorScheme.surface,
+        color = if (isConfirm) confirmColor else MaterialTheme.colorScheme.surfaceVariant,
         border = BorderStroke(0.5.dp, LedgerDivider)
     ) {
         Box(contentAlignment = Alignment.Center) {

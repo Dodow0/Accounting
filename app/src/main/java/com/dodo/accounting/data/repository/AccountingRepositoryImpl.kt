@@ -78,6 +78,13 @@ class AccountingRepositoryImpl @Inject constructor(
         accountDao.setArchived(id, archived)
     }
 
+    override suspend fun deleteAccount(id: Long) = database.withTransaction {
+        val existing = accountDao.getAccount(id) ?: error("账户不存在")
+        if (existing.deletedAt != null) return@withTransaction
+        require(accountDao.countActiveAccounts() > 1) { "至少保留一个账户" }
+        accountDao.softDelete(id)
+    }
+
     override suspend fun addCategory(category: CategoryEntity): Long = database.withTransaction {
         val trimmed = category.name.trim()
         require(trimmed.isNotBlank()) { "分类名称不能为空" }

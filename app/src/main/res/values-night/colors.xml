@@ -12,4 +12,9 @@
     <color name="app_on_surface">#E8ECEA</color>
     <color name="app_on_surface_variant">#99E8ECEA</color>
     <color name="app_outline">#38564B</color>
+    <color name="app_outline_variant">#284139</color>
+    <color name="ledger_mint">#1A3D30</color>
+    <color name="ledger_panel">#1D2925</color>
+    <color name="ledger_divider">#30423C</color>
+    <color name="ledger_expense_pink">#FFB2BF</color>
 </resources>

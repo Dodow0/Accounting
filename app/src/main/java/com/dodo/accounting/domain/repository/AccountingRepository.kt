@@ -39,6 +39,7 @@ interface AccountingRepository {
 
     suspend fun addAccount(account: AccountEntity): Long
     suspend fun archiveAccount(id: Long, archived: Boolean)
+    suspend fun deleteAccount(id: Long)
     suspend fun addCategory(category: CategoryEntity): Long
     suspend fun renameCategory(id: Long, name: String)
     suspend fun updateCategory(id: Long, name: String, iconName: String, colorArgb: Long)

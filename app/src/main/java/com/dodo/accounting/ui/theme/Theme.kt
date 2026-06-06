@@ -24,7 +24,7 @@ private fun lightScheme(): ColorScheme = lightColorScheme(
     surfaceVariant = colorResource(R.color.app_surface_variant),
     onSurfaceVariant = colorResource(R.color.app_on_surface_variant),
     outline = colorResource(R.color.app_outline),
-    outlineVariant = colorResource(R.color.app_outline),
+    outlineVariant = colorResource(R.color.app_outline_variant),
     error = colorResource(R.color.over_budget)
 )
 
@@ -44,7 +44,7 @@ private fun darkScheme(): ColorScheme = darkColorScheme(
     surfaceVariant = colorResource(R.color.app_surface_variant),
     onSurfaceVariant = colorResource(R.color.app_on_surface_variant),
     outline = colorResource(R.color.app_outline),
-    outlineVariant = colorResource(R.color.app_outline),
+    outlineVariant = colorResource(R.color.app_outline_variant),
     error = colorResource(R.color.over_budget)
 )
 

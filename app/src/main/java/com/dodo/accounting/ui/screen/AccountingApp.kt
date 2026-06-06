@@ -36,7 +36,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -144,6 +144,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
@@ -190,10 +191,18 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-internal val LedgerMint = Color(0xFFDDF4EC)
-internal val LedgerPanel = Color(0xFFF8F6EF)
-internal val LedgerDivider = Color(0xFFDFDCD3)
-internal val LedgerExpensePink = Color(0xFFFF9AA9)
+internal val LedgerMint: Color
+    @Composable get() = colorResource(R.color.ledger_mint)
+
+internal val LedgerPanel: Color
+    @Composable get() = colorResource(R.color.ledger_panel)
+
+internal val LedgerDivider: Color
+    @Composable get() = colorResource(R.color.ledger_divider)
+
+internal val LedgerExpensePink: Color
+    @Composable get() = colorResource(R.color.ledger_expense_pink)
+
 internal val LedgerCardShape = RoundedCornerShape(8.dp)
 
 @Composable
@@ -264,10 +273,14 @@ fun AccountingApp(
         )
     }
 
+    LaunchedEffect(selectedTab) {
+        viewModel.setTrendDataEnabled(selectedTab == AppTab.Stats)
+    }
+
     CompositionLocalProvider(LocalDensity provides appDensity) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
-            contentWindowInsets = WindowInsets(0.dp),
+            contentWindowInsets = WindowInsets.statusBars,
             snackbarHost = { SnackbarHost(snackbarHostState) },
             bottomBar = {
                 AppBottomBar(
@@ -295,7 +308,6 @@ fun AccountingApp(
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
                     .padding(padding)
-                    .statusBarsPadding()
             ) {
                 val openEditor: (TransactionWithDetails) -> Unit = { transaction ->
                     viewModel.startEditTransaction(transaction)
