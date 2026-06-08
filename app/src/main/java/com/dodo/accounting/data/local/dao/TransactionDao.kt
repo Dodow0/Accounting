@@ -35,7 +35,7 @@ interface TransactionDao {
     @Query(
         """
         SELECT DISTINCT transactions.* FROM transactions
-        LEFT JOIN categories ON categories.id = transactions.categoryId
+        LEFT JOIN categories ON categories.id = transactions.categoryId AND categories.deletedAt IS NULL
         LEFT JOIN accounts directAccount ON directAccount.id = transactions.accountId
         LEFT JOIN accounts fromAccount ON fromAccount.id = transactions.fromAccountId
         LEFT JOIN accounts toAccount ON toAccount.id = transactions.toAccountId
@@ -82,8 +82,7 @@ interface TransactionDao {
         SELECT
             COALESCE(SUM(CASE WHEN type = 'EXPENSE' THEN amountCents ELSE 0 END), 0) AS expenseCents,
             COALESCE(SUM(CASE WHEN type = 'INCOME' THEN amountCents ELSE 0 END), 0) AS incomeCents,
-            COALESCE(SUM(CASE WHEN type = 'TRANSFER' THEN amountCents ELSE 0 END), 0) AS transferInCents,
-            COALESCE(SUM(CASE WHEN type = 'TRANSFER' THEN amountCents ELSE 0 END), 0) AS transferOutCents,
+            COALESCE(SUM(CASE WHEN type = 'TRANSFER' THEN amountCents ELSE 0 END), 0) AS transferCents,
             COALESCE(SUM(CASE WHEN type = 'BALANCE_ADJUSTMENT' THEN amountCents ELSE 0 END), 0) AS adjustmentCents
         FROM transactions
         WHERE deletedAt IS NULL AND occurredAt >= :startAt AND occurredAt < :endAt
@@ -95,12 +94,12 @@ interface TransactionDao {
         """
         SELECT categories.id AS categoryId, categories.name AS categoryName, SUM(transactions.amountCents) AS amountCents
         FROM transactions
-        LEFT JOIN categories ON categories.id = transactions.categoryId
+        LEFT JOIN categories ON categories.id = transactions.categoryId AND categories.deletedAt IS NULL
         WHERE transactions.deletedAt IS NULL
             AND transactions.type = 'EXPENSE'
             AND transactions.occurredAt >= :startAt
             AND transactions.occurredAt < :endAt
-        GROUP BY transactions.categoryId
+        GROUP BY categories.id
         ORDER BY amountCents DESC
         """
     )
@@ -122,6 +121,17 @@ interface TransactionDao {
         """
     )
     suspend fun getTransactionsSnapshot(): List<TransactionEntity>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM transactions
+        WHERE accountId = :accountId OR fromAccountId = :accountId OR toAccountId = :accountId
+        """
+    )
+    suspend fun countReferencingAccount(accountId: Long): Int
+
+    @Query("UPDATE transactions SET categoryId = NULL, updatedAt = :updatedAt WHERE categoryId = :categoryId")
+    suspend fun clearCategoryReferences(categoryId: Long, updatedAt: Long = System.currentTimeMillis()): Int
 
     @Query("SELECT * FROM transaction_tags ORDER BY transactionId ASC, tagId ASC")
     suspend fun getTransactionTagRefsSnapshot(): List<TransactionTagCrossRef>

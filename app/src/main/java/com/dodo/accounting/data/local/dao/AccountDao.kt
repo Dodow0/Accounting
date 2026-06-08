@@ -48,6 +48,12 @@ interface AccountDao {
     @Query("SELECT COUNT(*) FROM accounts WHERE deletedAt IS NULL")
     suspend fun countActiveAccounts(): Int
 
+    @Query("SELECT COUNT(*) FROM accounts WHERE deletedAt IS NULL AND isArchived = 0")
+    suspend fun countAvailableAccounts(): Int
+
+    @Query("SELECT MAX(sortOrder) FROM accounts WHERE deletedAt IS NULL")
+    suspend fun getMaxActiveSortOrder(): Int?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(account: AccountEntity): Long
 

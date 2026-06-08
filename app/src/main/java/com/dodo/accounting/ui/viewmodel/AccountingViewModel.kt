@@ -14,6 +14,7 @@ import com.dodo.accounting.data.local.model.AccountBalanceRow
 import com.dodo.accounting.data.local.model.CategorySummaryRow
 import com.dodo.accounting.data.local.model.TransactionWithDetails
 import com.dodo.accounting.domain.model.AccountingSummary
+import com.dodo.accounting.domain.model.BackupPreview
 import com.dodo.accounting.domain.model.StatsPeriod
 import com.dodo.accounting.domain.model.rangeContaining
 import com.dodo.accounting.domain.repository.AccountingRepository
@@ -32,6 +33,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
 import java.util.Calendar
 import javax.inject.Inject
 
@@ -47,12 +50,14 @@ data class AccountingUiState(
     val monthlyBudget: BudgetEntity? = null,
     val categoryBudgets: List<BudgetEntity> = emptyList(),
     val monthlyExpenseByCategory: List<CategorySummaryRow> = emptyList(),
+    val entryMonthExpenseByCategory: List<CategorySummaryRow> = emptyList(),
     val recurringRules: List<RecurringRuleEntity> = emptyList(),
     val calendarMonthTransactions: List<TransactionWithDetails> = emptyList(),
     val periodTransactions: List<TransactionWithDetails> = emptyList(),
     val trendTransactions: List<TransactionWithDetails> = emptyList(),
     val calendarMonthStartMillis: Long = startOfMonthMillis(System.currentTimeMillis()),
     val calendarSelectedDateMillis: Long = startOfDayMillis(System.currentTimeMillis()),
+    val statsAnchorMillis: Long = startOfDayMillis(System.currentTimeMillis()),
     val editingTransaction: TransactionWithDetails? = null,
     val selectedPeriod: StatsPeriod = StatsPeriod.MONTH,
     val searchQuery: String = "",
@@ -61,6 +66,8 @@ data class AccountingUiState(
     val exportPreview: String = "",
     val exportContent: String = "",
     val exportFormat: ExportFormat = ExportFormat.JSON,
+    val pendingImportPreview: BackupPreview? = null,
+    val pendingImportContent: String = "",
     val isLoading: Boolean = true,
     val message: String? = null
 ) {
@@ -90,7 +97,9 @@ class AccountingViewModel @Inject constructor(
     private val searchQuery = MutableStateFlow("")
     private val searchType = MutableStateFlow<TransactionType?>(null)
     private val selectedAccountId = MutableStateFlow<Long?>(null)
+    private val statsAnchorMillis = MutableStateFlow(startOfDayMillis(System.currentTimeMillis()))
     private val calendarMonthStartMillis = MutableStateFlow(startOfMonthMillis(System.currentTimeMillis()))
+    private val entryMonthStartMillis = MutableStateFlow(startOfMonthMillis(System.currentTimeMillis()))
     private val trendDataEnabled = MutableStateFlow(false)
     private val localState = MutableStateFlow(
         AccountingUiState(isLoading = true)
@@ -108,8 +117,10 @@ class AccountingViewModel @Inject constructor(
         BackupActions(viewModelScope, repository, exportBackup, localState, ::showMessage)
     }
 
-    private val summaryFlow = selectedPeriod.flatMapLatest { period ->
-        observeAccountingSummary(period)
+    private val summaryFlow = combine(selectedPeriod, statsAnchorMillis) { period, anchorMillis ->
+        period to localDateFromMillis(anchorMillis)
+    }.flatMapLatest { (period, anchorDate) ->
+        observeAccountingSummary(period, anchorDate)
     }
 
     private val searchFlow = combine(searchQuery, searchType, selectedAccountId) { query, type, accountId ->
@@ -137,8 +148,27 @@ class AccountingViewModel @Inject constructor(
             endAt = addMonthsMillis(startOfMonthMillis(System.currentTimeMillis()), 1)
         )
 
-    private val periodTransactionsFlow = selectedPeriod.flatMapLatest { period ->
-        val range = period.rangeContaining()
+    private val entryMonthExpenseByCategoryFlow = entryMonthStartMillis.flatMapLatest { monthStart ->
+        repository.observeExpenseByCategory(
+            startAt = monthStart,
+            endAt = addMonthsMillis(monthStart, 1)
+        )
+    }
+
+    private val categoryExpenseState = combine(
+        currentMonthExpenseByCategoryFlow,
+        entryMonthExpenseByCategoryFlow
+    ) { monthlyExpenseByCategory, entryMonthExpenseByCategory ->
+        CategoryExpenseState(
+            monthlyExpenseByCategory = monthlyExpenseByCategory,
+            entryMonthExpenseByCategory = entryMonthExpenseByCategory
+        )
+    }
+
+    private val periodTransactionsFlow = combine(selectedPeriod, statsAnchorMillis) { period, anchorMillis ->
+        period to localDateFromMillis(anchorMillis)
+    }.flatMapLatest { (period, anchorDate) ->
+        val range = period.rangeContaining(anchorDate)
         repository.searchTransactions(
             query = "",
             startAt = range.startMillis,
@@ -203,15 +233,16 @@ class AccountingViewModel @Inject constructor(
         dataState,
         planningState,
         calendarMonthTransactionsFlow,
-        currentMonthExpenseByCategoryFlow,
+        categoryExpenseState,
         transactionBuckets
-    ) { data, planning, calendarMonthTransactions, monthlyExpenseByCategory, buckets ->
+    ) { data, planning, calendarMonthTransactions, categoryExpense, buckets ->
         data.copy(
             monthlyBudget = planning.monthlyBudget,
             recurringRules = planning.recurringRules,
             categoryBudgets = planning.categoryBudgets,
             calendarMonthTransactions = calendarMonthTransactions,
-            monthlyExpenseByCategory = monthlyExpenseByCategory,
+            monthlyExpenseByCategory = categoryExpense.monthlyExpenseByCategory,
+            entryMonthExpenseByCategory = categoryExpense.entryMonthExpenseByCategory,
             periodTransactions = buckets.periodTransactions,
             trendTransactions = buckets.trendTransactions
         )
@@ -219,11 +250,12 @@ class AccountingViewModel @Inject constructor(
 
     private val filterState = combine(
         selectedPeriod,
+        statsAnchorMillis,
         searchQuery,
         searchType,
         selectedAccountId
-    ) { period, query, type, accountId ->
-        FilterState(period, query, type, accountId)
+    ) { period, statsAnchorMillis, query, type, accountId ->
+        FilterState(period, statsAnchorMillis, query, type, accountId)
     }
 
     private val screenState = combine(
@@ -245,11 +277,13 @@ class AccountingViewModel @Inject constructor(
             monthlyBudget = data.monthlyBudget,
             categoryBudgets = data.categoryBudgets,
             monthlyExpenseByCategory = data.monthlyExpenseByCategory,
+            entryMonthExpenseByCategory = data.entryMonthExpenseByCategory,
             recurringRules = data.recurringRules,
             calendarMonthTransactions = data.calendarMonthTransactions,
             periodTransactions = data.periodTransactions,
             trendTransactions = data.trendTransactions,
             selectedPeriod = filters.period,
+            statsAnchorMillis = filters.statsAnchorMillis,
             searchQuery = filters.query,
             searchType = filters.type,
             selectedAccountId = filters.accountId,
@@ -265,6 +299,8 @@ class AccountingViewModel @Inject constructor(
             exportPreview = local.exportPreview,
             exportContent = local.exportContent,
             exportFormat = local.exportFormat,
+            pendingImportPreview = local.pendingImportPreview,
+            pendingImportContent = local.pendingImportContent,
             editingTransaction = local.editingTransaction,
             calendarMonthStartMillis = local.calendarMonthStartMillis,
             calendarSelectedDateMillis = local.calendarSelectedDateMillis,
@@ -282,12 +318,29 @@ class AccountingViewModel @Inject constructor(
                 ensureSeedData()
                 repository.generateDueRecurringTransactions()
             }
+                .onSuccess { result ->
+                    if (result.skippedCount > 0) {
+                        showMessage("周期账单已自动生成 ${result.generatedCount} 条，已跳过 ${result.skippedCount} 条超出上限的过期账单")
+                    }
+                }
                 .onFailure { showMessage(it.message ?: "初始化默认数据失败") }
         }
     }
 
     fun setPeriod(period: StatsPeriod) {
         selectedPeriod.value = period
+    }
+
+    fun moveStatsPeriod(delta: Int) {
+        statsAnchorMillis.value = movePeriodAnchorMillis(
+            millis = statsAnchorMillis.value,
+            period = selectedPeriod.value,
+            delta = delta
+        )
+    }
+
+    fun resetStatsPeriod() {
+        statsAnchorMillis.value = startOfDayMillis(System.currentTimeMillis())
     }
 
     fun setTrendDataEnabled(enabled: Boolean) {
@@ -331,6 +384,10 @@ class AccountingViewModel @Inject constructor(
                 calendarSelectedDateMillis = startOfDayMillis(now)
             )
         }
+    }
+
+    fun setEntryOccurredAt(millis: Long) {
+        entryMonthStartMillis.value = startOfMonthMillis(millis)
     }
 
     fun addExpense(
@@ -405,6 +462,8 @@ class AccountingViewModel @Inject constructor(
 
     fun archiveAccount(accountId: Long) = managementActions.archiveAccount(accountId)
 
+    fun restoreAccount(accountId: Long) = managementActions.restoreAccount(accountId)
+
     fun deleteAccount(accountId: Long) = managementActions.deleteAccount(accountId)
 
     fun deleteTransaction(transactionId: Long) = transactionActions.deleteTransaction(transactionId)
@@ -466,7 +525,11 @@ class AccountingViewModel @Inject constructor(
 
     fun export(format: ExportFormat) = backupActions.export(format)
 
-    fun importJson(content: String) = backupActions.importJson(content)
+    fun importJson(content: String) = backupActions.previewImportJson(content)
+
+    fun confirmImportJson() = backupActions.confirmImportJson()
+
+    fun cancelImportJson() = backupActions.cancelImportJson()
 
     fun clearMessage() {
         localState.update { it.copy(message = null) }
@@ -492,6 +555,7 @@ class AccountingViewModel @Inject constructor(
         val categoryBudgets: List<BudgetEntity> = emptyList(),
         val recurringRules: List<RecurringRuleEntity> = emptyList(),
         val monthlyExpenseByCategory: List<CategorySummaryRow> = emptyList(),
+        val entryMonthExpenseByCategory: List<CategorySummaryRow> = emptyList(),
         val calendarMonthTransactions: List<TransactionWithDetails> = emptyList(),
         val periodTransactions: List<TransactionWithDetails> = emptyList(),
         val trendTransactions: List<TransactionWithDetails> = emptyList()
@@ -508,12 +572,37 @@ class AccountingViewModel @Inject constructor(
         val categoryBudgets: List<BudgetEntity>
     )
 
+    private data class CategoryExpenseState(
+        val monthlyExpenseByCategory: List<CategorySummaryRow>,
+        val entryMonthExpenseByCategory: List<CategorySummaryRow>
+    )
+
     private data class FilterState(
         val period: StatsPeriod,
+        val statsAnchorMillis: Long,
         val query: String,
         val type: TransactionType?,
         val accountId: Long?
     )
+}
+
+private fun localDateFromMillis(millis: Long): java.time.LocalDate {
+    return Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
+}
+
+private fun movePeriodAnchorMillis(
+    millis: Long,
+    period: StatsPeriod,
+    delta: Int
+): Long {
+    return Calendar.getInstance().apply {
+        timeInMillis = millis
+        when (period) {
+            StatsPeriod.WEEK -> add(Calendar.WEEK_OF_YEAR, delta)
+            StatsPeriod.MONTH -> add(Calendar.MONTH, delta)
+            StatsPeriod.YEAR -> add(Calendar.YEAR, delta)
+        }
+    }.timeInMillis.let(::startOfDayMillis)
 }
 
 private fun startOfDayMillis(millis: Long): Long {

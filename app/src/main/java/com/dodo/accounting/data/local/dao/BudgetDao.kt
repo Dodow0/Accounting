@@ -64,6 +64,18 @@ interface BudgetDao {
         updatedAt: Long = System.currentTimeMillis()
     )
 
+    @Query(
+        """
+        UPDATE budgets
+        SET isArchived = 1, updatedAt = :updatedAt
+        WHERE deletedAt IS NULL AND isArchived = 0 AND categoryId = :categoryId
+        """
+    )
+    suspend fun archiveBudgetsForCategory(
+        categoryId: Long,
+        updatedAt: Long = System.currentTimeMillis()
+    ): Int
+
     @Query("UPDATE budgets SET deletedAt = :deletedAt, updatedAt = :deletedAt WHERE id = :id")
     suspend fun softDelete(id: Long, deletedAt: Long = System.currentTimeMillis())
 

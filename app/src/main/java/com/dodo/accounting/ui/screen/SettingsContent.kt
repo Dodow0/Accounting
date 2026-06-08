@@ -1,7 +1,6 @@
 package com.dodo.accounting.ui.screen
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
@@ -93,6 +92,7 @@ import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Wallet
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -149,6 +149,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.dodo.accounting.data.local.entity.AccountEntity
 import com.dodo.accounting.data.local.entity.AccountType
 import com.dodo.accounting.data.local.entity.CategoryKind
@@ -180,13 +183,13 @@ import java.util.Date
 import java.util.Locale
 
 
-internal enum class MinePage(val title: String) {
-    Menu("我的"),
-    Accounts("账户管理"),
-    Categories("分类管理"),
-    Budget("预算设置"),
-    Data("数据导出"),
-    About("关于")
+private object MineRoute {
+    const val Menu = "mine_menu"
+    const val Accounts = "mine_accounts"
+    const val Categories = "mine_categories"
+    const val Budget = "mine_budget"
+    const val Data = "mine_data"
+    const val Trash = "mine_trash"
 }
 
 @Composable
@@ -194,36 +197,48 @@ internal fun MineScreen(
     uiState: AccountingUiState,
     viewModel: AccountingViewModel
 ) {
-    var page by remember { mutableStateOf(MinePage.Menu) }
-    var childDialogOpen by remember { mutableStateOf(false) }
+    val navController = rememberNavController()
 
     if (uiState.isLoading) {
         FullScreenLoading()
         return
     }
 
-    BackHandler(enabled = page != MinePage.Menu && !childDialogOpen) {
-        page = MinePage.Menu
-    }
-
-    when (page) {
-        MinePage.Menu -> MineMenu(onOpen = { page = it })
-        MinePage.Accounts -> AccountManagementPage(uiState, viewModel, onBack = { page = MinePage.Menu })
-        MinePage.Categories -> CategoryManagementPage(
-            uiState = uiState,
-            viewModel = viewModel,
-            onBack = { page = MinePage.Menu },
-            onDialogOpenChanged = { childDialogOpen = it }
-        )
-        MinePage.Budget -> BudgetSettingsPage(uiState, viewModel, onBack = { page = MinePage.Menu })
-        MinePage.Data -> DataManagementPage(uiState, viewModel, onBack = { page = MinePage.Menu })
-        MinePage.About -> AboutPage(onBack = { page = MinePage.Menu })
+    NavHost(
+        navController = navController,
+        startDestination = MineRoute.Menu,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        composable(MineRoute.Menu) {
+            MineMenu(
+                onOpen = { route ->
+                    navController.navigate(route) {
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+        composable(MineRoute.Accounts) {
+            AccountManagementPage(uiState, viewModel, onBack = { navController.popBackStack() })
+        }
+        composable(MineRoute.Categories) {
+            CategoryManagementPage(uiState, viewModel, onBack = { navController.popBackStack() })
+        }
+        composable(MineRoute.Budget) {
+            BudgetSettingsPage(uiState, viewModel, onBack = { navController.popBackStack() })
+        }
+        composable(MineRoute.Data) {
+            DataManagementPage(uiState, viewModel, onBack = { navController.popBackStack() })
+        }
+        composable(MineRoute.Trash) {
+            TrashPage(uiState, viewModel, onBack = { navController.popBackStack() })
+        }
     }
 }
 
 @Composable
 internal fun MineMenu(
-    onOpen: (MinePage) -> Unit
+    onOpen: (String) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -233,15 +248,14 @@ internal fun MineMenu(
         item {
             Text(
                 "设置",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
+                style = MaterialTheme.typography.titleLarge
             )
         }
-        item { MineMenuRow("账户管理", "资产账户与初始余额", Icons.Default.AccountBalanceWallet) { onOpen(MinePage.Accounts) } }
-        item { MineMenuRow("分类管理", "分类、标签、排序和图标颜色", Icons.Default.Category) { onOpen(MinePage.Categories) } }
-        item { MineMenuRow("预算设置", "总预算、分类预算和周期账单", Icons.Default.Assessment) { onOpen(MinePage.Budget) } }
-        item { MineMenuRow("数据导出", "JSON / CSV 备份与回收站", Icons.Default.Download) { onOpen(MinePage.Data) } }
-        item { MineMenuRow("关于", "本地优先的个人账本", Icons.AutoMirrored.Filled.Label) { onOpen(MinePage.About) } }
+        item { MineMenuRow("账户管理", "资产账户与初始余额", Icons.Default.AccountBalanceWallet) { onOpen(MineRoute.Accounts) } }
+        item { MineMenuRow("分类管理", "分类、标签、排序和图标颜色", Icons.Default.Category) { onOpen(MineRoute.Categories) } }
+        item { MineMenuRow("预算设置", "总预算、分类预算和周期账单", Icons.Default.Assessment) { onOpen(MineRoute.Budget) } }
+        item { MineMenuRow("数据导出", "JSON / CSV 备份与恢复", Icons.Default.Download) { onOpen(MineRoute.Data) } }
+        item { MineMenuRow("回收站", "恢复或彻底删除流水", Icons.Default.Restore) { onOpen(MineRoute.Trash) } }
     }
 }
 
@@ -268,7 +282,7 @@ internal fun MineMenuRow(
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, fontWeight = FontWeight.SemiBold)
+                Text(title, style = MaterialTheme.typography.titleSmall)
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
@@ -295,7 +309,7 @@ internal fun MineBackHeader(
         Surface(
             modifier = Modifier
                 .size(40.dp)
-                .clickable(onClick = onBack),
+                .ledgerPressClickable(onClick = onBack),
             shape = LedgerCardShape,
             color = MaterialTheme.colorScheme.surfaceVariant,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -308,7 +322,7 @@ internal fun MineBackHeader(
                 )
             }
         }
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text(title, style = MaterialTheme.typography.titleLarge)
     }
 }
 
@@ -319,6 +333,7 @@ internal fun AccountManagementPage(
     onBack: () -> Unit
 ) {
     val activeAccountRows = uiState.accounts.filterNot { it.account.isArchived }
+    val archivedAccountRows = uiState.accounts.filter { it.account.isArchived }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -331,8 +346,22 @@ internal fun AccountManagementPage(
         items(activeAccountRows, key = { it.account.id }) { row ->
             AccountRow(
                 row = row,
-                onDelete = { viewModel.deleteAccount(row.account.id) }
+                onDelete = { viewModel.deleteAccount(row.account.id) },
+                deleteContentDescription = "归档或移除账户",
+                confirmDeleteContentDescription = "确认归档或移除账户"
             )
+        }
+        if (archivedAccountRows.isNotEmpty()) {
+            item { SectionHeader("已归档账户", "${archivedAccountRows.size} 个") }
+            items(archivedAccountRows, key = { it.account.id }) { row ->
+                AccountRow(
+                    row = row,
+                    onRestore = { viewModel.restoreAccount(row.account.id) },
+                    onDelete = { viewModel.deleteAccount(row.account.id) },
+                    deleteContentDescription = "移除归档账户",
+                    confirmDeleteContentDescription = "确认移除归档账户"
+                )
+            }
         }
     }
 }
@@ -341,8 +370,7 @@ internal fun AccountManagementPage(
 internal fun CategoryManagementPage(
     uiState: AccountingUiState,
     viewModel: AccountingViewModel,
-    onBack: () -> Unit,
-    onDialogOpenChanged: (Boolean) -> Unit = {}
+    onBack: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -350,8 +378,8 @@ internal fun CategoryManagementPage(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item { MineBackHeader("分类管理", onBack) }
-        item { CategoryManagementCard(uiState, viewModel, onDialogOpenChanged) }
-        item { TagManagementCard(uiState, viewModel, onDialogOpenChanged) }
+        item { CategoryManagementCard(uiState, viewModel) }
+        item { TagManagementCard(uiState, viewModel) }
     }
 }
 
@@ -411,6 +439,7 @@ internal fun DataManagementPage(
             }
         }
     }
+    val importPreview = uiState.pendingImportPreview
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -422,27 +451,35 @@ internal fun DataManagementPage(
             LedgerCard {
                     SectionHeader("备份", "JSON / CSV")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { viewModel.export(ExportFormat.JSON) }) {
-                            Icon(Icons.Default.Download, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("生成 JSON")
-                        }
-                        FilledTonalButton(onClick = { viewModel.export(ExportFormat.CSV) }) {
-                            Icon(Icons.Default.Download, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("生成 CSV")
-                        }
+                        LedgerActionButton(
+                            label = "生成 JSON",
+                            icon = Icons.Default.Download,
+                            onClick = { viewModel.export(ExportFormat.JSON) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        LedgerActionButton(
+                            label = "生成 CSV",
+                            icon = Icons.Default.Download,
+                            onClick = { viewModel.export(ExportFormat.CSV) },
+                            modifier = Modifier.weight(1f),
+                            containerColor = LedgerMint,
+                            contentColor = MaterialTheme.colorScheme.primary,
+                            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                        )
                     }
-                    FilledTonalButton(
+                    LedgerActionButton(
+                        label = "导入 JSON 备份",
+                        icon = Icons.Default.Upload,
                         onClick = { jsonImportLauncher.launch(arrayOf("application/json", "text/*")) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Upload, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("导入 JSON 备份")
-                    }
+                        modifier = Modifier.fillMaxWidth(),
+                        containerColor = LedgerMint,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                    )
                     if (uiState.exportPreview.isNotBlank()) {
-                        FilledTonalButton(
+                        LedgerActionButton(
+                            label = "保存到文件",
+                            icon = Icons.Default.Download,
                             onClick = {
                                 when (uiState.exportFormat) {
                                     ExportFormat.JSON -> jsonSaveLauncher.launch("accounting-backup.json")
@@ -450,11 +487,7 @@ internal fun DataManagementPage(
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("保存到文件")
-                        }
+                        )
                         Text(
                             uiState.exportPreview,
                             modifier = Modifier
@@ -468,9 +501,60 @@ internal fun DataManagementPage(
                     }
             }
         }
-        item {
-            SectionHeader("回收站", "${uiState.trash.size} 条")
-        }
+    }
+
+    if (importPreview != null) {
+        val exportedAt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA)
+            .format(Date(importPreview.exportedAt))
+        AlertDialog(
+            onDismissRequest = { viewModel.cancelImportJson() },
+            title = {
+                Text("确认导入 JSON 备份")
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("导出时间：$exportedAt")
+                    Text("备份版本：${importPreview.schemaVersion}")
+                    Text("账户：${importPreview.accountCount} 个")
+                    Text("分类：${importPreview.categoryCount} 个")
+                    Text("标签：${importPreview.tagCount} 个")
+                    Text("流水：${importPreview.transactionCount} 条")
+                    Text("预算：${importPreview.budgetCount} 条")
+                    Text("周期规则：${importPreview.recurringRuleCount} 条")
+                    Text(
+                        "导入会替换当前全部本地数据，无法自动撤销。",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.confirmImportJson() }) {
+                    Text("确认导入", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelImportJson() }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+internal fun TrashPage(
+    uiState: AccountingUiState,
+    viewModel: AccountingViewModel,
+    onBack: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item { MineBackHeader("回收站", onBack) }
+        item { SectionHeader("已删除流水", "${uiState.trash.size} 条") }
         items(uiState.trash, key = { it.transaction.id }) { transaction ->
             TransactionRow(
                 item = transaction,
@@ -486,21 +570,32 @@ internal fun DataManagementPage(
                 }
             )
         }
-    }
-}
-
-@Composable
-internal fun AboutPage(
-    onBack: () -> Unit
-) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item { MineBackHeader("关于", onBack) }
         item {
-            InfoCard("个人账本 · 本地优先 · 支持账户、分类、预算、周期账单、导入导出和回收站。")
+            if (uiState.trash.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 42.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Restore,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.54f),
+                            modifier = Modifier.size(56.dp)
+                        )
+                        Text(
+                            "回收站是空的",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
         }
     }
 }

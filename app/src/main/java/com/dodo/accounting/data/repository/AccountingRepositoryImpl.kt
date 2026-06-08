@@ -18,6 +18,10 @@ import com.dodo.accounting.data.local.model.AccountBalanceRow
 import com.dodo.accounting.data.local.model.CategorySummaryRow
 import com.dodo.accounting.data.local.model.PeriodSummaryRow
 import com.dodo.accounting.data.local.model.TransactionWithDetails
+import com.dodo.accounting.domain.model.AccountRemovalAction
+import com.dodo.accounting.domain.model.AccountRemovalResult
+import com.dodo.accounting.domain.model.BackupPreview
+import com.dodo.accounting.domain.model.RecurringGenerationResult
 import com.dodo.accounting.domain.model.TransactionDraft
 import com.dodo.accounting.domain.model.TransactionRules
 import com.dodo.accounting.domain.repository.AccountingRepository
@@ -72,17 +76,79 @@ class AccountingRepositoryImpl @Inject constructor(
     override fun observeRecurringRules(): Flow<List<RecurringRuleEntity>> =
         recurringRuleDao.observeRules()
 
-    override suspend fun addAccount(account: AccountEntity): Long = accountDao.insert(account)
-
-    override suspend fun archiveAccount(id: Long, archived: Boolean) {
-        accountDao.setArchived(id, archived)
+    override suspend fun addAccount(account: AccountEntity): Long = database.withTransaction {
+        val trimmed = account.name.trim()
+        require(trimmed.isNotBlank()) { "账户名称不能为空" }
+        val nextSortOrder = (accountDao.getMaxActiveSortOrder() ?: -1) + 1
+        accountDao.insert(
+            account.copy(
+                name = trimmed,
+                sortOrder = nextSortOrder,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
     }
 
-    override suspend fun deleteAccount(id: Long) = database.withTransaction {
+    override suspend fun archiveAccount(id: Long, archived: Boolean): AccountRemovalResult = database.withTransaction {
         val existing = accountDao.getAccount(id) ?: error("账户不存在")
-        if (existing.deletedAt != null) return@withTransaction
-        require(accountDao.countActiveAccounts() > 1) { "至少保留一个账户" }
-        accountDao.softDelete(id)
+        if (existing.deletedAt != null) {
+            return@withTransaction AccountRemovalResult(AccountRemovalAction.UNCHANGED)
+        }
+        if (existing.isArchived == archived) {
+            val disabledRules = if (archived) {
+                recurringRuleDao.disableRulesForAccount(id)
+            } else {
+                0
+            }
+            return@withTransaction AccountRemovalResult(
+                action = if (archived) AccountRemovalAction.ARCHIVED else AccountRemovalAction.RESTORED,
+                disabledRecurringRuleCount = disabledRules
+            )
+        }
+        if (archived) {
+            require(accountDao.countAvailableAccounts() > 1) { "至少保留一个可用账户" }
+        }
+        val now = System.currentTimeMillis()
+        accountDao.setArchived(id, archived, now)
+        val disabledRules = if (archived) {
+            recurringRuleDao.disableRulesForAccount(id, now)
+        } else {
+            0
+        }
+        AccountRemovalResult(
+            action = if (archived) AccountRemovalAction.ARCHIVED else AccountRemovalAction.RESTORED,
+            disabledRecurringRuleCount = disabledRules
+        )
+    }
+
+    override suspend fun deleteAccount(id: Long): AccountRemovalResult = database.withTransaction {
+        val existing = accountDao.getAccount(id) ?: error("账户不存在")
+        if (existing.deletedAt != null) {
+            return@withTransaction AccountRemovalResult(AccountRemovalAction.UNCHANGED)
+        }
+        val availableAccountCount = accountDao.countAvailableAccounts()
+        if (existing.isArchived) {
+            require(availableAccountCount >= 1) { "至少保留一个可用账户" }
+        } else {
+            require(availableAccountCount > 1) { "至少保留一个可用账户" }
+        }
+
+        val now = System.currentTimeMillis()
+        val disabledRules = recurringRuleDao.disableRulesForAccount(id, now)
+        val hasHistory = transactionDao.countReferencingAccount(id) > 0
+        if (hasHistory) {
+            accountDao.setArchived(id, true, now)
+            AccountRemovalResult(
+                action = AccountRemovalAction.ARCHIVED,
+                disabledRecurringRuleCount = disabledRules
+            )
+        } else {
+            accountDao.softDelete(id, now)
+            AccountRemovalResult(
+                action = AccountRemovalAction.DELETED,
+                disabledRecurringRuleCount = disabledRules
+            )
+        }
     }
 
     override suspend fun addCategory(category: CategoryEntity): Long = database.withTransaction {
@@ -141,8 +207,14 @@ class AccountingRepositoryImpl @Inject constructor(
         categoryDao.update(target.copy(sortOrder = existing.sortOrder, updatedAt = now))
     }
 
-    override suspend fun deleteCategory(id: Long) {
-        categoryDao.softDelete(id)
+    override suspend fun deleteCategory(id: Long) = database.withTransaction {
+        val existing = categoryDao.getCategoryById(id) ?: error("分类不存在")
+        if (existing.deletedAt != null) return@withTransaction
+        val now = System.currentTimeMillis()
+        transactionDao.clearCategoryReferences(id, now)
+        budgetDao.archiveBudgetsForCategory(id, now)
+        recurringRuleDao.clearCategoryReferences(id, now)
+        categoryDao.softDelete(id, now)
     }
 
     override suspend fun addTransaction(draft: TransactionDraft): Long = database.withTransaction {
@@ -212,6 +284,7 @@ class AccountingRepositoryImpl @Inject constructor(
         require(rule.name.isNotBlank()) { "周期账单名称不能为空" }
         require(rule.intervalMonths > 0) { "周期月数必须大于 0" }
         TransactionRules.validate(rule.toDraft(rule.nextRunAt))
+        requireRuleAccountsAvailable(rule)
         recurringRuleDao.insert(
             rule.copy(
                 name = rule.name.trim(),
@@ -223,7 +296,11 @@ class AccountingRepositoryImpl @Inject constructor(
         )
     }
 
-    override suspend fun setRecurringRuleEnabled(id: Long, enabled: Boolean) {
+    override suspend fun setRecurringRuleEnabled(id: Long, enabled: Boolean) = database.withTransaction {
+        if (enabled) {
+            val rule = recurringRuleDao.getRule(id) ?: error("周期规则不存在")
+            requireRuleAccountsAvailable(rule)
+        }
         recurringRuleDao.setEnabled(id, enabled)
     }
 
@@ -231,11 +308,12 @@ class AccountingRepositoryImpl @Inject constructor(
         recurringRuleDao.softDelete(id)
     }
 
-    override suspend fun generateDueRecurringTransactions(): Int = database.withTransaction {
+    override suspend fun generateDueRecurringTransactions(): RecurringGenerationResult = database.withTransaction {
         val now = System.currentTimeMillis()
         var generated = 0
+        var skipped = 0
         recurringRuleDao.getDueRules(now).forEach { rule ->
-            if (!rule.toDraft(rule.nextRunAt).isValid()) {
+            if (!rule.toDraft(rule.nextRunAt).isValid() || !rule.hasAvailableAccounts()) {
                 recurringRuleDao.update(rule.copy(isEnabled = false, updatedAt = now))
                 return@forEach
             }
@@ -250,10 +328,11 @@ class AccountingRepositoryImpl @Inject constructor(
             }
             while (nextRunAt <= now) {
                 nextRunAt = nextRunAt.advanceByMonths(rule.intervalMonths)
+                skipped += 1
             }
             recurringRuleDao.update(rule.copy(nextRunAt = nextRunAt, updatedAt = now))
         }
-        generated
+        RecurringGenerationResult(generatedCount = generated, skippedCount = skipped)
     }
 
     override suspend fun addTag(name: String): Long = database.withTransaction {
@@ -332,9 +411,11 @@ class AccountingRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun previewImportJson(content: String): BackupPreview =
+        parseBackupPayload(content).toPreview()
+
     override suspend fun importJson(content: String) {
-        val payload = backupJson.decodeFromString<BackupPayload>(content)
-        require(payload.schemaVersion == 1) { "暂不支持该备份版本" }
+        val payload = parseBackupPayload(content)
 
         database.withTransaction {
             transactionDao.clearAllTagRefs()
@@ -353,6 +434,12 @@ class AccountingRepositoryImpl @Inject constructor(
             if (payload.budgets.isNotEmpty()) budgetDao.insertAll(payload.budgets)
             if (payload.recurringRules.isNotEmpty()) recurringRuleDao.insertAll(payload.recurringRules)
         }
+    }
+
+    private fun parseBackupPayload(content: String): BackupPayload {
+        val payload = backupJson.decodeFromString<BackupPayload>(content)
+        require(payload.schemaVersion == 1) { "暂不支持该备份版本" }
+        return payload
     }
 
     private suspend fun insertTransaction(draft: TransactionDraft): Long {
@@ -390,6 +477,20 @@ class AccountingRepositoryImpl @Inject constructor(
         }
     }
 
+    private suspend fun requireRuleAccountsAvailable(rule: RecurringRuleEntity) {
+        require(rule.hasAvailableAccounts()) { "周期规则引用的账户不可用" }
+    }
+
+    private suspend fun RecurringRuleEntity.hasAvailableAccounts(): Boolean {
+        return referencedAccountIds().all { accountId ->
+            accountDao.getAccount(accountId)?.let { it.deletedAt == null && !it.isArchived } == true
+        }
+    }
+
+    private fun RecurringRuleEntity.referencedAccountIds(): List<Long> {
+        return listOfNotNull(accountId, fromAccountId, toAccountId).distinct()
+    }
+
     @Serializable
     private data class BackupPayload(
         val schemaVersion: Int = 1,
@@ -401,7 +502,19 @@ class AccountingRepositoryImpl @Inject constructor(
         val transactionTags: List<TransactionTagCrossRef> = emptyList(),
         val budgets: List<BudgetEntity> = emptyList(),
         val recurringRules: List<RecurringRuleEntity> = emptyList()
-    )
+    ) {
+        fun toPreview(): BackupPreview =
+            BackupPreview(
+                schemaVersion = schemaVersion,
+                exportedAt = exportedAt,
+                accountCount = accounts.size,
+                categoryCount = categories.size,
+                tagCount = tags.size,
+                transactionCount = transactions.size,
+                budgetCount = budgets.size,
+                recurringRuleCount = recurringRules.size
+            )
+    }
 
     private companion object {
         const val MAX_RECURRING_RUNS_PER_RULE = 36

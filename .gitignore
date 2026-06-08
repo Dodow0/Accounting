@@ -17,7 +17,6 @@ local.properties
 .externalNativeBuild
 .cxx
 captures/
-app/schemas/
 
 # System files
 .DS_Store
@@ -38,3 +37,6 @@ dist/
 
 # Sensitive information (not typically in this project but good practice)
 google-services.json
+
+# Design documents
+docs/design/

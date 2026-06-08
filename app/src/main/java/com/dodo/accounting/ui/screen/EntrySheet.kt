@@ -165,6 +165,7 @@ import com.dodo.accounting.data.local.model.CategorySummaryRow as CategorySummar
 import com.dodo.accounting.data.local.model.TransactionWithDetails
 import com.dodo.accounting.domain.model.Money
 import com.dodo.accounting.domain.model.StatsPeriod
+import com.dodo.accounting.domain.model.projectedCategoryBudgetCents
 import com.dodo.accounting.domain.util.handleAmountKey
 import com.dodo.accounting.domain.util.hasUnresolvedAmountExpression
 import com.dodo.accounting.domain.util.normalizedAmountInput
@@ -250,6 +251,10 @@ internal fun EntrySheetContentV2(
             delay(120)
             contentScrollState.animateScrollTo(contentScrollState.maxValue)
         }
+    }
+
+    LaunchedEffect(occurredAt) {
+        viewModel.setEntryOccurredAt(occurredAt)
     }
 
     val categories = when (selectedType) {
@@ -424,7 +429,8 @@ internal fun EntrySheetContentV2(
                         uiState = uiState,
                         category = selectedCategory,
                         amount = normalizedAmountInput(amount),
-                        editing = editing
+                        editing = editing,
+                        occurredAt = occurredAt
                     )
                 }
 
@@ -436,18 +442,21 @@ internal fun EntrySheetContentV2(
                         label = if (note.isBlank()) "添加备注" else "已备注",
                         icon = Icons.Default.Edit,
                         modifier = Modifier.weight(1f),
+                        showLabel = false,
                         onClick = { detailsExpanded = !detailsExpanded }
                     )
                     EntryActionPill(
                         label = dateChipLabel(occurredAt),
                         icon = Icons.Default.DateRange,
                         modifier = Modifier.weight(1f),
+                        showLabel = false,
                         onClick = { detailsExpanded = true }
                     )
                     EntryActionPill(
                         label = if (selectedType == TransactionType.TRANSFER) "转账账户" else selectedAccountName(uiState.activeAccounts, accountId),
                         icon = Icons.Default.Payments,
                         modifier = Modifier.weight(1f),
+                        showLabel = false,
                         onClick = { detailsExpanded = true }
                     )
                 }
@@ -536,8 +545,7 @@ internal fun EntrySheetContentV2(
                 amount = it
                 formError = null
             },
-            hasPendingCalculation = hasPendingCalculation,
-            onConfirm = ::submit
+            hasPendingCalculation = hasPendingCalculation
         )
     }
 }
@@ -564,13 +572,12 @@ internal fun EntryCategoryGrid(
     val rows = visibleItems.chunked(5)
 
     if (showAllCategories) {
-        ModalBottomSheet(onDismissRequest = { showAllCategories = false }) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+        ModalBottomSheet(
+            onDismissRequest = { showAllCategories = false },
+            containerColor = MaterialTheme.colorScheme.background
+        ) {
+            LedgerCard(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Text(
                     "选择分类",
@@ -582,7 +589,7 @@ internal fun EntryCategoryGrid(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 420.dp),
-                    contentPadding = PaddingValues(bottom = 8.dp),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
@@ -598,6 +605,7 @@ internal fun EntryCategoryGrid(
                     }
                 }
             }
+            Spacer(Modifier.height(14.dp))
         }
     }
 
@@ -748,6 +756,7 @@ internal fun EntryActionPill(
     label: String,
     icon: ImageVector,
     modifier: Modifier = Modifier,
+    showLabel: Boolean = true,
     onClick: () -> Unit
 ) {
     Surface(
@@ -763,15 +772,17 @@ internal fun EntryActionPill(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(
-                label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.bodySmall
-            )
+            Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(if (showLabel) 17.dp else 20.dp))
+            if (showLabel) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
     }
 }
@@ -882,7 +893,8 @@ internal fun validateEntryDraft(
     if (hasUnresolvedAmountExpression(amount)) {
         return "请先完成金额计算"
     }
-    val cents = Money.fromMajor(amount).cents
+    val cents = Money.parseMajorStrict(amount)?.cents
+        ?: return Money.INVALID_AMOUNT_MESSAGE
     if (cents == 0L || (cents < 0 && type != TransactionType.BALANCE_ADJUSTMENT)) {
         return "请输入有效金额"
     }
@@ -903,25 +915,17 @@ internal fun CategoryBudgetHint(
     uiState: AccountingUiState,
     category: CategoryEntity,
     amount: String,
-    editing: TransactionWithDetails?
+    editing: TransactionWithDetails?,
+    occurredAt: Long
 ) {
     val budget = uiState.categoryBudgets.firstOrNull { it.categoryId == category.id }
-    val spentCents = uiState.monthlyExpenseByCategory
-        .firstOrNull { it.categoryId == category.id }
-        ?.amountCents ?: 0
-    val editingDeduction = editing?.transaction
-        ?.takeIf {
-            it.type == TransactionType.EXPENSE &&
-                it.categoryId == category.id &&
-                isInCurrentMonth(it.occurredAt)
-        }
-        ?.amountCents ?: 0
-    val enteredCents = if (hasUnresolvedAmountExpression(amount)) {
-        0
-    } else {
-        Money.fromMajor(amount).cents.coerceAtLeast(0)
-    }
-    val projectedCents = (spentCents - editingDeduction).coerceAtLeast(0) + enteredCents
+    val projectedCents = projectedCategoryBudgetCents(
+        categoryId = category.id,
+        amount = amount,
+        occurredAt = occurredAt,
+        expenseByCategory = uiState.entryMonthExpenseByCategory,
+        editingTransaction = editing?.transaction
+    )
     val budgetCents = budget?.amountCents ?: 0
     val progress = if (budgetCents > 0) projectedCents.toFloat() / budgetCents.toFloat() else 0f
     val overBudget = budgetCents > 0 && projectedCents > budgetCents
@@ -1007,7 +1011,7 @@ internal fun DateTimeSelector(
     pickerMode?.let { mode ->
         ModalBottomSheet(
             onDismissRequest = { pickerMode = null },
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = MaterialTheme.colorScheme.background
         ) {
             DateTimeWheelSheet(
                 mode = mode,
@@ -1046,11 +1050,8 @@ internal fun DateTimeWheelSheet(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+    LedgerCard(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1200,14 +1201,14 @@ internal fun dateTimeToMillis(
 internal fun AmountKeypad(
     value: String,
     onValueChange: (String) -> Unit,
-    hasPendingCalculation: Boolean = false,
-    onConfirm: () -> Unit = {}
+    hasPendingCalculation: Boolean = false
 ) {
     val rows = listOf(
         listOf("7", "8", "9", "÷"),
         listOf("4", "5", "6", "×"),
         listOf("1", "2", "3", "-"),
-        listOf(".", "0", "⌫", "ok")
+        listOf(".", "0", "⌫", "+"),
+        listOf("=")
     )
 
     Surface(
@@ -1227,11 +1228,7 @@ internal fun AmountKeypad(
                             modifier = Modifier.weight(1f),
                             confirmColor = if (hasPendingCalculation) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary,
                             onClick = {
-                                if (key == "ok") {
-                                    onConfirm()
-                                } else {
-                                    onValueChange(handleAmountKey(value, key))
-                                }
+                                onValueChange(handleAmountKey(value, key))
                             }
                         )
                     }
@@ -1249,13 +1246,7 @@ internal fun AmountKey(
     onClick: () -> Unit
 ) {
     val isOperator = label in setOf("+", "-", "×", "÷")
-    val isConfirm = label == "ok"
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.98f else 1f,
-        label = "amountKeyScale"
-    )
+    val isConfirm = label == "="
     val haptic = LocalHapticFeedback.current
     val clickWithFeedback = {
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1265,12 +1256,7 @@ internal fun AmountKey(
     Surface(
         modifier = modifier
             .height(58.dp)
-            .scale(scale)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = LocalIndication.current,
-                onClick = clickWithFeedback
-            ),
+            .ledgerPressClickable(onClick = clickWithFeedback),
         color = if (isConfirm) confirmColor else MaterialTheme.colorScheme.surfaceVariant,
         border = BorderStroke(0.5.dp, LedgerDivider)
     ) {
@@ -1282,11 +1268,11 @@ internal fun AmountKey(
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(24.dp)
                 )
-                isConfirm -> Icon(
-                    Icons.Default.Add,
-                    contentDescription = "完成",
-                    tint = Color.White,
-                    modifier = Modifier.size(28.dp)
+                isConfirm -> Text(
+                    "=",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 28.sp
                 )
                 else -> Text(
                     label,
@@ -1319,28 +1305,34 @@ internal fun AccountPickerField(
     )
 
     if (expanded) {
-        ModalBottomSheet(onDismissRequest = { expanded = false }) {
-            SelectionSheetHeader(title = label, subtitle = "${accounts.size} 个账户")
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 420.dp),
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(accounts, key = { it.id }) { account ->
-                    AccountGridItem(
-                        account = account,
-                        selected = account.id == selectedAccountId,
-                        onClick = {
-                            onSelected(account.id)
-                            expanded = false
-                        }
-                    )
+        ModalBottomSheet(
+            onDismissRequest = { expanded = false },
+            containerColor = MaterialTheme.colorScheme.background
+        ) {
+            LedgerCard(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                SelectionSheetHeader(title = label, subtitle = "${accounts.size} 个账户")
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    contentPadding = PaddingValues(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(accounts, key = { it.id }) { account ->
+                        AccountGridItem(
+                            account = account,
+                            selected = account.id == selectedAccountId,
+                            onClick = {
+                                onSelected(account.id)
+                                expanded = false
+                            }
+                        )
+                    }
                 }
             }
+            Spacer(Modifier.height(14.dp))
         }
     }
 }
@@ -1365,28 +1357,34 @@ internal fun CategoryPickerField(
     )
 
     if (expanded) {
-        ModalBottomSheet(onDismissRequest = { expanded = false }) {
-            SelectionSheetHeader(title = label, subtitle = "${categories.size} 个分类")
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 420.dp),
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(categories, key = { it.id }) { category ->
-                    CategoryGridItem(
-                        category = category,
-                        selected = category.id == selectedCategoryId,
-                        onClick = {
-                            onSelected(category.id)
-                            expanded = false
-                        }
-                    )
+        ModalBottomSheet(
+            onDismissRequest = { expanded = false },
+            containerColor = MaterialTheme.colorScheme.background
+        ) {
+            LedgerCard(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                SelectionSheetHeader(title = label, subtitle = "${categories.size} 个分类")
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    contentPadding = PaddingValues(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(categories, key = { it.id }) { category ->
+                        CategoryGridItem(
+                            category = category,
+                            selected = category.id == selectedCategoryId,
+                            onClick = {
+                                onSelected(category.id)
+                                expanded = false
+                            }
+                        )
+                    }
                 }
             }
+            Spacer(Modifier.height(14.dp))
         }
     }
 }
@@ -1446,7 +1444,7 @@ internal fun SelectionSheetHeader(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
     ) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(title, style = MaterialTheme.typography.titleMedium)
         Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

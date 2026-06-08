@@ -11,6 +11,9 @@ import com.dodo.accounting.data.local.model.AccountBalanceRow
 import com.dodo.accounting.data.local.model.CategorySummaryRow
 import com.dodo.accounting.data.local.model.PeriodSummaryRow
 import com.dodo.accounting.data.local.model.TransactionWithDetails
+import com.dodo.accounting.domain.model.AccountRemovalResult
+import com.dodo.accounting.domain.model.BackupPreview
+import com.dodo.accounting.domain.model.RecurringGenerationResult
 import com.dodo.accounting.domain.model.TransactionDraft
 import kotlinx.coroutines.flow.Flow
 
@@ -38,8 +41,8 @@ interface AccountingRepository {
     fun observeRecurringRules(): Flow<List<RecurringRuleEntity>>
 
     suspend fun addAccount(account: AccountEntity): Long
-    suspend fun archiveAccount(id: Long, archived: Boolean)
-    suspend fun deleteAccount(id: Long)
+    suspend fun archiveAccount(id: Long, archived: Boolean): AccountRemovalResult
+    suspend fun deleteAccount(id: Long): AccountRemovalResult
     suspend fun addCategory(category: CategoryEntity): Long
     suspend fun renameCategory(id: Long, name: String)
     suspend fun updateCategory(id: Long, name: String, iconName: String, colorArgb: Long)
@@ -55,12 +58,13 @@ interface AccountingRepository {
     suspend fun addRecurringRule(rule: RecurringRuleEntity): Long
     suspend fun setRecurringRuleEnabled(id: Long, enabled: Boolean)
     suspend fun deleteRecurringRule(id: Long)
-    suspend fun generateDueRecurringTransactions(): Int
+    suspend fun generateDueRecurringTransactions(): RecurringGenerationResult
     suspend fun addTag(name: String): Long
     suspend fun renameTag(id: Long, name: String)
     suspend fun deleteTag(id: Long)
     suspend fun ensureSeedData()
     suspend fun exportJson(): String
     suspend fun exportCsv(): String
+    suspend fun previewImportJson(content: String): BackupPreview
     suspend fun importJson(content: String)
 }

@@ -366,7 +366,7 @@ internal fun LedgerTextFilter(
     Box(
         modifier = Modifier
             .heightIn(min = 48.dp)
-            .clickable(onClick = onClick)
+            .ledgerPressClickable(onClick = onClick)
             .padding(horizontal = 4.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -511,14 +511,17 @@ internal fun CalendarScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                FilledTonalButton(onClick = { viewModel.moveCalendarMonth(-1) }) {
-                    Text("上月")
-                }
+                LedgerActionButton(
+                    label = "上月",
+                    onClick = { viewModel.moveCalendarMonth(-1) },
+                    containerColor = LedgerMint,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                )
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         "${monthStart.year}年${monthStart.monthValue}月",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold
+                        style = MaterialTheme.typography.titleLarge
                     )
                     Text(
                         "日历账单",
@@ -526,9 +529,13 @@ internal fun CalendarScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                FilledTonalButton(onClick = { viewModel.moveCalendarMonth(1) }) {
-                    Text("下月")
-                }
+                LedgerActionButton(
+                    label = "下月",
+                    onClick = { viewModel.moveCalendarMonth(1) },
+                    containerColor = LedgerMint,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                )
             }
         }
         item {
@@ -541,14 +548,15 @@ internal fun CalendarScreen(
             )
         }
         item {
-            FilledTonalButton(
+            LedgerActionButton(
+                label = "回到今天",
+                icon = Icons.Default.DateRange,
                 onClick = viewModel::resetCalendarToToday,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.DateRange, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("回到今天")
-            }
+                modifier = Modifier.fillMaxWidth(),
+                containerColor = LedgerMint,
+                contentColor = MaterialTheme.colorScheme.primary,
+                borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+            )
         }
         item {
             SectionHeader(
@@ -730,7 +738,7 @@ internal fun CalendarReminderList(reminders: List<RecurringRuleEntity>) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(rule.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(rule.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             listOf(transactionLabel(rule.transactionType), rule.merchant, rule.note)
                                 .filter { it.isNotBlank() }

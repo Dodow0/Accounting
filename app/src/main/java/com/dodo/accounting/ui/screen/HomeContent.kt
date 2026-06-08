@@ -187,7 +187,8 @@ import java.util.Locale
 internal fun HomeScreen(
     uiState: AccountingUiState,
     viewModel: AccountingViewModel,
-    onEditTransaction: (TransactionWithDetails) -> Unit
+    onEditTransaction: (TransactionWithDetails) -> Unit,
+    onOpenSearch: () -> Unit
 ) {
     var actionTarget by remember { mutableStateOf<TransactionWithDetails?>(null) }
     val monthStart = localDateFromMillis(uiState.calendarMonthStartMillis)
@@ -221,6 +222,7 @@ internal fun HomeScreen(
                 transactions = monthlyTransactions,
                 onPreviousMonth = { viewModel.moveCalendarMonth(-1) },
                 onNextMonth = { viewModel.moveCalendarMonth(1) },
+                onSearchClick = onOpenSearch,
                 modifier = Modifier.graphicsLayer {
                     val scale = 1f - collapseProgress * 0.08f
                     scaleX = scale
@@ -281,6 +283,7 @@ internal fun HomeMonthlySummaryCard(
     transactions: List<TransactionWithDetails>,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
+    onSearchClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val incomeCents = transactions
@@ -309,8 +312,7 @@ internal fun HomeMonthlySummaryCard(
                 Text(
                     "${monthStart.monthValue}月记账",
                     color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
+                    style = MaterialTheme.typography.titleMedium
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onPreviousMonth) {
@@ -323,8 +325,7 @@ internal fun HomeMonthlySummaryCard(
                     Text(
                         "${monthStart.year}年${monthStart.monthValue}月",
                         color = Color.White,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        style = MaterialTheme.typography.titleMedium
                     )
                     IconButton(onClick = onNextMonth) {
                         Icon(
@@ -334,12 +335,14 @@ internal fun HomeMonthlySummaryCard(
                         )
                     }
                 }
-                Icon(
-                    Icons.Default.Search,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.88f),
-                    modifier = Modifier.size(22.dp)
-                )
+                IconButton(onClick = onSearchClick) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = "搜索流水",
+                        tint = Color.White.copy(alpha = 0.88f),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -348,8 +351,7 @@ internal fun HomeMonthlySummaryCard(
                 Text(
                     "本月结余",
                     color = Color.White.copy(alpha = 0.84f),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
+                    style = MaterialTheme.typography.titleMedium
                 )
                 Spacer(Modifier.height(10.dp))
                 Text(
@@ -563,7 +565,10 @@ internal fun AssetMetricPill(
 @Composable
 internal fun AccountRow(
     row: AccountBalanceRow,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    onRestore: (() -> Unit)? = null,
+    deleteContentDescription: String = "删除账户",
+    confirmDeleteContentDescription: String = "确认删除账户"
 ) {
     var confirmDelete by remember(row.account.id) { mutableStateOf(false) }
 
@@ -598,7 +603,7 @@ internal fun AccountRow(
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(row.account.name, fontWeight = FontWeight.SemiBold)
+                Text(row.account.name, style = MaterialTheme.typography.titleSmall)
                 Text(
                     accountTypeLabel(row.account.type),
                     style = MaterialTheme.typography.labelMedium,
@@ -609,6 +614,16 @@ internal fun AccountRow(
                 Money(row.balanceCents).format(),
                 fontWeight = FontWeight.SemiBold
             )
+            if (onRestore != null) {
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = onRestore) {
+                    Icon(
+                        Icons.Default.Restore,
+                        contentDescription = "恢复账户",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
             if (onDelete != null) {
                 Spacer(Modifier.width(4.dp))
                 IconButton(
@@ -623,7 +638,7 @@ internal fun AccountRow(
                 ) {
                     Icon(
                         if (confirmDelete) Icons.Default.Check else Icons.Default.Delete,
-                        contentDescription = if (confirmDelete) "确认删除账户" else "删除账户",
+                        contentDescription = if (confirmDelete) confirmDeleteContentDescription else deleteContentDescription,
                         tint = if (confirmDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -639,16 +654,16 @@ internal fun AddAccountCard(viewModel: AccountingViewModel) {
     var type by remember { mutableStateOf(AccountType.CUSTOM) }
 
     LedgerCard {
-            Text("新增资产账户", fontWeight = FontWeight.SemiBold)
+            Text("新增资产账户", style = MaterialTheme.typography.titleMedium)
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 AccountType.entries.forEach { accountType ->
-                    FilterChip(
+                    LedgerChoiceChip(
                         selected = type == accountType,
-                        onClick = { type = accountType },
-                        label = { Text(accountTypeLabel(accountType)) }
+                        label = accountTypeLabel(accountType),
+                        onClick = { type = accountType }
                     )
                 }
             }
@@ -667,7 +682,9 @@ internal fun AddAccountCard(viewModel: AccountingViewModel) {
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
             )
-            FilledTonalButton(
+            LedgerActionButton(
+                label = "添加账户",
+                icon = Icons.Default.Add,
                 onClick = {
                     viewModel.addAccount(name, type, initialBalance)
                     name = ""
@@ -675,10 +692,6 @@ internal fun AddAccountCard(viewModel: AccountingViewModel) {
                     type = AccountType.CUSTOM
                 },
                 modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("添加账户")
-            }
+            )
     }
 }

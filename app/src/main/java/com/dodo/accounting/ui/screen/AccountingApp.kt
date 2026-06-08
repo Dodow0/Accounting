@@ -230,7 +230,7 @@ internal fun LedgerPanelSurface(
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
-    val clickModifier = onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier
+    val clickModifier = onClick?.let { Modifier.ledgerPressClickable(onClick = it) } ?: Modifier
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -319,7 +319,20 @@ fun AccountingApp(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     composable(AppTab.Home.route) {
-                        HomeScreen(uiState, viewModel, openEditor)
+                        HomeScreen(
+                            uiState = uiState,
+                            viewModel = viewModel,
+                            onEditTransaction = openEditor,
+                            onOpenSearch = {
+                                navController.navigate(AppTab.Bills.route) {
+                                    launchSingleTop = true
+                                    restoreState = true
+                                    popUpTo(AppTab.Home.route) {
+                                        saveState = true
+                                    }
+                                }
+                            }
+                        )
                     }
                     composable(AppTab.Stats.route) {
                         StatsScreen(uiState, viewModel, openEditor)
@@ -417,7 +430,7 @@ internal fun AppBottomBar(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .size(68.dp)
-                .clickable(onClick = onAdd),
+                .ledgerPressClickable(pressedScale = 0.96f, onClick = onAdd),
             shape = RoundedCornerShape(34.dp),
             color = Color(0xFFF3F4F6),
             border = BorderStroke(1.dp, LedgerDivider.copy(alpha = 0.72f)),
@@ -457,7 +470,7 @@ internal fun BottomNavItem(
     Column(
         modifier = modifier
             .height(54.dp)
-            .clickable(onClick = onClick),
+            .ledgerPressClickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {

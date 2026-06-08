@@ -1,7 +1,6 @@
 package com.dodo.accounting.ui.screen
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
@@ -15,6 +14,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Indication
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -117,7 +117,6 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -193,6 +192,148 @@ internal fun FullScreenLoading(
     }
 }
 
+@Composable
+internal fun Modifier.ledgerPressClickable(
+    enabled: Boolean = true,
+    pressedScale: Float = 0.98f,
+    indication: Indication? = null,
+    onClick: () -> Unit
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (enabled && pressed) pressedScale else 1f,
+        label = "ledgerPressClickableScale"
+    )
+    return scale(pressScale).clickable(
+        enabled = enabled,
+        interactionSource = interactionSource,
+        indication = indication,
+        onClick = onClick
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun Modifier.ledgerPressCombinedClickable(
+    enabled: Boolean = true,
+    pressedScale: Float = 0.98f,
+    indication: Indication? = null,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (enabled && pressed) pressedScale else 1f,
+        label = "ledgerPressCombinedClickableScale"
+    )
+    return scale(pressScale).combinedClickable(
+        enabled = enabled,
+        interactionSource = interactionSource,
+        indication = indication,
+        onClick = onClick,
+        onLongClick = onLongClick
+    )
+}
+
+@Composable
+internal fun LedgerChoiceChip(
+    selected: Boolean,
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier
+            .height(36.dp)
+            .ledgerPressClickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        color = if (selected) LedgerMint else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.64f),
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.42f) else LedgerDivider
+        )
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 13.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                label,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+internal fun LedgerActionButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    containerColor: Color = MaterialTheme.colorScheme.primary,
+    contentColor: Color = MaterialTheme.colorScheme.onPrimary,
+    borderColor: Color = Color.Transparent,
+    enabled: Boolean = true
+) {
+    Surface(
+        modifier = modifier
+            .heightIn(min = 44.dp)
+            .ledgerPressClickable(enabled = enabled, pressedScale = 0.97f, onClick = onClick),
+        shape = LedgerCardShape,
+        color = if (enabled) containerColor else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+        border = BorderStroke(1.dp, borderColor)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (icon != null) {
+                Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(
+                label,
+                color = contentColor,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+internal fun LedgerIconActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.primary,
+    contentColor: Color = MaterialTheme.colorScheme.onPrimary
+) {
+    Surface(
+        modifier = modifier
+            .size(44.dp)
+            .ledgerPressClickable(pressedScale = 0.96f, onClick = onClick),
+        shape = LedgerCardShape,
+        color = containerColor,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = contentDescription, tint = contentColor)
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun TransactionRow(
@@ -202,10 +343,11 @@ internal fun TransactionRow(
     trailing: @Composable () -> Unit
 ) {
     val transaction = item.transaction
-    val rowTint = item.category?.let { Color(it.colorArgb) } ?: transactionColor(transaction.type)
-    val rowIcon = item.category?.let { categoryIcon(it.iconName) } ?: transactionIcon(transaction.type)
+    val category = item.activeCategory
+    val rowTint = category?.let { Color(it.colorArgb) } ?: transactionColor(transaction.type)
+    val rowIcon = category?.let { categoryIcon(it.iconName) } ?: transactionIcon(transaction.type)
     val title = when (transaction.type) {
-        TransactionType.EXPENSE, TransactionType.INCOME -> item.category?.name ?: transactionTitle(item)
+        TransactionType.EXPENSE, TransactionType.INCOME -> category?.name ?: transactionTitle(item)
         else -> transactionTitle(item)
     }
     val subtitle = when (transaction.type) {
@@ -217,22 +359,14 @@ internal fun TransactionRow(
         }
         else -> transactionSubtitle(item)
     }
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(
-        targetValue = if (pressed) 0.985f else 1f,
-        label = "transactionRowPressScale"
-    )
     val rowModifier = if (onClick != null || onLongClick != null) {
         Modifier
             .fillMaxWidth()
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = null,
+            .ledgerPressCombinedClickable(
+                pressedScale = 0.985f,
                 onClick = { onClick?.invoke() },
                 onLongClick = onLongClick
             )
-            .scale(pressScale)
     } else {
         Modifier.fillMaxWidth()
     }
@@ -300,34 +434,33 @@ internal fun TransactionActionSheet(
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.background
+    ) {
+        LedgerCard(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            Text(
+            SectionHeader(
                 transactionTitle(transaction),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                amountLabel(transaction.transaction.type, transaction.transaction.amountCents)
             )
-            Text(
-                amountLabel(transaction.transaction.type, transaction.transaction.amountCents),
-                color = transactionColor(transaction.transaction.type),
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold
+            LedgerActionButton(
+                label = "编辑",
+                icon = Icons.Default.Edit,
+                onClick = onEdit,
+                modifier = Modifier.fillMaxWidth(),
+                containerColor = LedgerMint,
+                contentColor = MaterialTheme.colorScheme.primary,
+                borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
             )
-            FilledTonalButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Edit, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("编辑")
-            }
             HorizontalDivider(
                 modifier = Modifier.padding(top = 4.dp),
                 color = MaterialTheme.colorScheme.outlineVariant
             )
-            Button(
+            LedgerActionButton(
+                label = if (confirmDelete) "确认删除" else "删除",
+                icon = Icons.Default.Delete,
                 onClick = {
                     if (confirmDelete) {
                         onDelete()
@@ -336,12 +469,10 @@ internal fun TransactionActionSheet(
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(if (confirmDelete) "确认删除" else "删除")
-            }
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+                borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.26f)
+            )
             Spacer(Modifier.size(12.dp))
         }
     }
@@ -350,28 +481,20 @@ internal fun TransactionActionSheet(
 @Composable
 internal fun CategoryManagementCard(
     uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
-    onDialogOpenChanged: (Boolean) -> Unit = {}
+    viewModel: AccountingViewModel
 ) {
     var newCategoryName by remember { mutableStateOf("") }
     var selectedKind by remember { mutableStateOf(CategoryKind.EXPENSE) }
     var categoryToEdit by remember { mutableStateOf<CategoryEntity?>(null) }
 
-    LaunchedEffect(categoryToEdit != null) {
-        onDialogOpenChanged(categoryToEdit != null)
-    }
-    DisposableEffect(Unit) {
-        onDispose { onDialogOpenChanged(false) }
-    }
-
     LedgerCard {
             SectionHeader("分类管理", "${uiState.categories.size} 类")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(CategoryKind.EXPENSE, CategoryKind.INCOME).forEach { kind ->
-                    FilterChip(
+                    LedgerChoiceChip(
                         selected = selectedKind == kind,
+                        label = categoryKindLabel(kind),
                         onClick = { selectedKind = kind },
-                        label = { Text(categoryKindLabel(kind)) }
                     )
                 }
             }
@@ -387,14 +510,16 @@ internal fun CategoryManagementCard(
                     modifier = Modifier.weight(1f),
                     singleLine = true
                 )
-                Button(onClick = {
-                    if (newCategoryName.isNotBlank()) {
-                        viewModel.addCategory(newCategoryName, selectedKind)
-                        newCategoryName = ""
+                LedgerIconActionButton(
+                    icon = Icons.Default.Add,
+                    contentDescription = "新增分类",
+                    onClick = {
+                        if (newCategoryName.isNotBlank()) {
+                            viewModel.addCategory(newCategoryName, selectedKind)
+                            newCategoryName = ""
+                        }
                     }
-                }) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                }
+                )
             }
             uiState.categories.groupBy { it.kind }.forEach { (kind, categories) ->
                 Text(
@@ -445,7 +570,7 @@ internal fun CategoryManagementRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onEdit),
+            .ledgerPressClickable(onClick = onEdit),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -459,7 +584,7 @@ internal fun CategoryManagementRow(
             }
         }
         Column(modifier = Modifier.weight(1f)) {
-            Text(category.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(category.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 "排序 ${category.sortOrder}",
                 style = MaterialTheme.typography.labelSmall,
@@ -512,14 +637,12 @@ internal fun CategoryEditDialog(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = MaterialTheme.colorScheme.background
     ) {
-        Column(
+        LedgerCard(
             modifier = Modifier
-                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -575,7 +698,9 @@ internal fun CategoryEditDialog(
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Button(
+            LedgerActionButton(
+                label = if (confirmDelete) "确认删除" else "删除分类",
+                icon = Icons.Default.Delete,
                 onClick = {
                     if (confirmDelete) {
                         onDelete()
@@ -584,14 +709,13 @@ internal fun CategoryEditDialog(
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(if (confirmDelete) "确认删除" else "删除分类")
-            }
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+                borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.26f)
+            )
             Spacer(Modifier.height(14.dp))
         }
+        Spacer(Modifier.height(14.dp))
     }
 }
 
@@ -606,7 +730,7 @@ internal fun CategoryEditPill(
     Surface(
         modifier = Modifier
             .height(38.dp)
-            .clickable(onClick = onClick),
+            .ledgerPressClickable(onClick = onClick),
         shape = RoundedCornerShape(19.dp),
         color = if (selected) LedgerMint else Color.Transparent,
         border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.42f) else LedgerDivider)
@@ -631,18 +755,10 @@ internal fun CategoryEditPill(
 @Composable
 internal fun TagManagementCard(
     uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
-    onDialogOpenChanged: (Boolean) -> Unit = {}
+    viewModel: AccountingViewModel
 ) {
     var newTagName by remember { mutableStateOf("") }
     var tagToRename by remember { mutableStateOf<TagEntity?>(null) }
-
-    LaunchedEffect(tagToRename != null) {
-        onDialogOpenChanged(tagToRename != null)
-    }
-    DisposableEffect(Unit) {
-        onDispose { onDialogOpenChanged(false) }
-    }
 
     LedgerCard {
             SectionHeader("标签管理", "${uiState.tags.size} 个")
@@ -658,32 +774,26 @@ internal fun TagManagementCard(
                     modifier = Modifier.weight(1f),
                     singleLine = true
                 )
-                Button(onClick = {
-                    if (newTagName.isNotBlank()) {
-                        viewModel.addTag(newTagName)
-                        newTagName = ""
+                LedgerIconActionButton(
+                    icon = Icons.Default.Add,
+                    contentDescription = "新增标签",
+                    onClick = {
+                        if (newTagName.isNotBlank()) {
+                            viewModel.addTag(newTagName)
+                            newTagName = ""
+                        }
                     }
-                }) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                }
+                )
             }
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 uiState.tags.forEach { tag ->
-                    AssistChip(
-                        onClick = { tagToRename = tag },
-                        label = { Text(tag.name) },
-                        trailingIcon = {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "删除",
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .clickable { viewModel.deleteTag(tag.id) }
-                            )
-                        }
+                    TagPill(
+                        tag = tag,
+                        onRename = { tagToRename = tag },
+                        onDelete = { viewModel.deleteTag(tag.id) }
                     )
                 }
             }
@@ -706,21 +816,22 @@ internal fun TagManagementCard(
                     singleLine = true
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    FilledTonalButton(
+                    LedgerActionButton(
+                        label = "取消",
                         onClick = { tagToRename = null },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("取消")
-                    }
-                    Button(
+                        modifier = Modifier.weight(1f),
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        borderColor = LedgerDivider
+                    )
+                    LedgerActionButton(
+                        label = "保存",
                         onClick = {
                             tagToRename?.let { viewModel.renameTag(it.id, renamedName) }
                             tagToRename = null
                         },
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Text("保存")
-                    }
+                    )
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -741,6 +852,44 @@ internal fun SummaryMetric(
     ) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(Money(cents).format(), color = color, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+internal fun TagPill(
+    tag: TagEntity,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .height(38.dp)
+            .ledgerPressClickable(onClick = onRename),
+        shape = RoundedCornerShape(19.dp),
+        color = LedgerMint,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                tag.name,
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "删除标签",
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                modifier = Modifier
+                    .size(18.dp)
+                    .clickable(onClick = onDelete)
+            )
+        }
     }
 }
 
@@ -831,7 +980,7 @@ internal fun ExpenseDonutChart(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("分类占比", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("分类占比", style = MaterialTheme.typography.titleMedium)
                 if (rows.isEmpty()) {
                     Text(
                         "本期暂无支出",
@@ -893,7 +1042,7 @@ internal fun CategorySummaryRow(
         0f
     }
     val clickModifier = if (onClick != null) {
-        Modifier.clickable(onClick = onClick)
+        Modifier.ledgerPressClickable(onClick = onClick)
     } else {
         Modifier
     }
@@ -909,7 +1058,7 @@ internal fun CategorySummaryRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 Money(cents).format(),
                 color = MaterialTheme.colorScheme.onSurface,
@@ -1011,7 +1160,7 @@ internal fun SectionHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(title, style = MaterialTheme.typography.titleMedium)
         Text(action, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -1180,10 +1329,11 @@ internal fun transactionColor(type: TransactionType): Color = when (type) {
 
 internal fun transactionTitle(item: TransactionWithDetails): String {
     val transaction = item.transaction
+    val category = item.activeCategory
     return when (transaction.type) {
         TransactionType.TRANSFER -> "${item.fromAccount?.name ?: "未知账户"} -> ${item.toAccount?.name ?: "未知账户"}"
         TransactionType.BALANCE_ADJUSTMENT -> "${item.account?.name ?: "未知账户"} 余额校正"
-        else -> transaction.merchant.ifBlank { item.category?.name ?: transactionLabel(transaction.type) }
+        else -> transaction.merchant.ifBlank { category?.name ?: transactionLabel(transaction.type) }
     }
 }
 
@@ -1193,12 +1343,15 @@ internal fun transactionSubtitle(item: TransactionWithDetails): String {
         TransactionType.TRANSFER -> "转账"
         else -> item.account?.name ?: "未选账户"
     }
-    val category = item.category?.name.orEmpty()
+    val category = item.activeCategory?.name.orEmpty()
     val note = transaction.note
     return listOf(account, category, note)
         .filter { it.isNotBlank() }
         .joinToString(" · ")
 }
+
+private val TransactionWithDetails.activeCategory
+    get() = category?.takeIf { it.deletedAt == null }
 
 internal fun amountLabel(type: TransactionType, cents: Long): String {
     val prefix = when (type) {
@@ -1319,12 +1472,6 @@ internal fun localDateStartMillis(date: LocalDate): Long {
         .atStartOfDay(ZoneId.systemDefault())
         .toInstant()
         .toEpochMilli()
-}
-
-internal fun isInCurrentMonth(millis: Long): Boolean {
-    val date = localDateFromMillis(millis)
-    val current = LocalDate.now(ZoneId.systemDefault())
-    return date.year == current.year && date.monthValue == current.monthValue
 }
 
 internal fun categoryPercent(cents: Long, totalCents: Long): Int {

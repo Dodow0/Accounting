@@ -7,6 +7,7 @@ import java.util.ArrayDeque
 fun handleAmountKey(current: String, key: String): String {
     return when (key) {
         "⌫" -> current.dropLast(1)
+        "=" -> normalizedAmountInput(current)
         "+", "-", "×", "÷" -> appendOperator(current, key)
         "." -> appendDecimalPoint(current)
         else -> appendDigit(current, key)

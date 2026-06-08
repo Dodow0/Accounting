@@ -55,6 +55,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Label
@@ -112,6 +113,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -242,7 +244,7 @@ internal fun StatsOverviewContent(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            PeriodSelector(uiState.selectedPeriod, viewModel::setPeriod)
+            StatsPeriodControls(uiState, viewModel)
         }
         item {
             AnimatedContent(
@@ -251,13 +253,14 @@ internal fun StatsOverviewContent(
                     fadeIn(animationSpec = tween(180)) togetherWith fadeOut(animationSpec = tween(90))
                 },
                 label = "statsPeriodContent"
-            ) {
+            ) { targetPeriod ->
+                val periodState = uiState.copy(selectedPeriod = targetPeriod)
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatsSummaryCard(uiState)
+                    StatsSummaryCard(periodState)
                     ExpenseDonutChart(
                         rows = expenseRows,
                         totalCents = totalExpenseCents,
-                        categories = uiState.expenseCategories
+                        categories = periodState.expenseCategories
                     )
                     LedgerCard {
                         SectionHeader("支出分类", "${expenseRows.size} 类")
@@ -289,6 +292,37 @@ internal fun StatsOverviewContent(
 }
 
 @Composable
+internal fun StatsPeriodControls(
+    uiState: AccountingUiState,
+    viewModel: AccountingViewModel
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        PeriodSelector(uiState.selectedPeriod, viewModel::setPeriod)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { viewModel.moveStatsPeriod(-1) }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "上一期")
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    uiState.summary?.periodLabel.orEmpty().ifBlank { "当前周期" },
+                    style = MaterialTheme.typography.titleMedium
+                )
+                TextButton(onClick = viewModel::resetStatsPeriod) {
+                    Text("回到当前")
+                }
+            }
+            IconButton(onClick = { viewModel.moveStatsPeriod(1) }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "下一期")
+            }
+        }
+    }
+}
+
+@Composable
 internal fun StatsSummaryCard(uiState: AccountingUiState) {
     LedgerCard {
         SectionHeader(uiState.summary?.periodLabel.orEmpty().ifBlank { "当前周期" }, "收支总览")
@@ -309,7 +343,7 @@ internal fun StatsSummaryCard(uiState: AccountingUiState) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             StatMetricTile(
                 label = "转账流水",
-                cents = uiState.summary?.totals?.transferOutCents ?: 0,
+                cents = uiState.summary?.totals?.transferCents ?: 0,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f)
             )
@@ -368,7 +402,8 @@ internal fun StatsCategoryDetailScreen(
 ) {
     var actionTarget by remember { mutableStateOf<TransactionWithDetails?>(null) }
     val transactions = uiState.periodTransactions.filter { item ->
-        item.transaction.type == TransactionType.EXPENSE && item.transaction.categoryId == category.categoryId
+        val activeCategoryId = item.category?.takeIf { it.deletedAt == null }?.id
+        item.transaction.type == TransactionType.EXPENSE && activeCategoryId == category.categoryId
     }
 
     LazyColumn(
@@ -385,7 +420,7 @@ internal fun StatsCategoryDetailScreen(
                 Surface(
                     modifier = Modifier
                         .size(40.dp)
-                        .clickable(onClick = onBack),
+                        .ledgerPressClickable(onClick = onBack),
                     shape = LedgerCardShape,
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -402,7 +437,7 @@ internal fun StatsCategoryDetailScreen(
                     modifier = Modifier.weight(1f),
                     horizontalAlignment = Alignment.End
                 ) {
-                    Text(category.categoryName ?: "未分类", fontWeight = FontWeight.SemiBold)
+                    Text(category.categoryName ?: "未分类", style = MaterialTheme.typography.titleSmall)
                     Text(
                         Money(category.amountCents).format(),
                         color = MaterialTheme.colorScheme.onSurface,
@@ -504,9 +539,10 @@ internal fun BudgetProgressCard(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                 )
-                Button(onClick = { viewModel.setMonthlyBudget(budgetAmount) }) {
-                    Text("设置")
-                }
+                LedgerActionButton(
+                    label = "设置",
+                    onClick = { viewModel.setMonthlyBudget(budgetAmount) }
+                )
             }
             SectionHeader("分类预算", "${uiState.expenseCategories.size} 类")
             uiState.expenseCategories.forEach { category ->
@@ -558,7 +594,7 @@ internal fun CategoryBudgetRow(
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(category.name, fontWeight = FontWeight.SemiBold)
+                Text(category.name, style = MaterialTheme.typography.titleSmall)
                 Text(
                     "${Money(spentCents).format()} / ${if (budgetCents > 0) Money(budgetCents).format() else "未设置"}",
                     style = MaterialTheme.typography.labelSmall,
@@ -620,7 +656,7 @@ internal fun RecurringRulesCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.EventRepeat, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("周期账单", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("周期账单", style = MaterialTheme.typography.titleMedium)
                 }
                 IconButton(onClick = viewModel::runDueRecurringRules) {
                     Icon(Icons.Default.PlayArrow, contentDescription = "生成到期账单")
@@ -692,7 +728,9 @@ internal fun RecurringRulesCard(
                 singleLine = false,
                 minLines = 2
             )
-            Button(
+            LedgerActionButton(
+                label = "添加每月规则",
+                icon = Icons.Default.EventRepeat,
                 onClick = {
                     viewModel.addMonthlyRecurringRule(
                         name = name,
@@ -712,11 +750,7 @@ internal fun RecurringRulesCard(
                     categoryId = null
                 },
                 modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.EventRepeat, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("添加每月规则")
-            }
+            )
 
             uiState.recurringRules.forEach { rule ->
                 RecurringRuleRow(rule, viewModel)
@@ -734,7 +768,7 @@ internal fun RecurringRuleRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(rule.name, fontWeight = FontWeight.SemiBold)
+            Text(rule.name, style = MaterialTheme.typography.titleSmall)
             Text(
                 "${transactionLabel(rule.transactionType)} ${Money(rule.amountCents).format()} · 下次 ${dateLabel(rule.nextRunAt)}",
                 style = MaterialTheme.typography.bodySmall,
@@ -745,7 +779,13 @@ internal fun RecurringRuleRow(
         }
         Switch(
             checked = rule.isEnabled,
-            onCheckedChange = { viewModel.setRecurringRuleEnabled(rule.id, it) }
+            onCheckedChange = { viewModel.setRecurringRuleEnabled(rule.id, it) },
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
         )
         IconButton(onClick = { viewModel.deleteRecurringRule(rule.id) }) {
             Icon(Icons.Default.Delete, contentDescription = "删除周期规则")

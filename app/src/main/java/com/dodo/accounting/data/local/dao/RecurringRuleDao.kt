@@ -31,6 +31,9 @@ interface RecurringRuleDao {
     @Query("SELECT * FROM recurring_rules ORDER BY createdAt ASC")
     suspend fun getRulesSnapshot(): List<RecurringRuleEntity>
 
+    @Query("SELECT * FROM recurring_rules WHERE id = :id LIMIT 1")
+    suspend fun getRule(id: Long): RecurringRuleEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(rule: RecurringRuleEntity): Long
 
@@ -42,6 +45,26 @@ interface RecurringRuleDao {
 
     @Query("UPDATE recurring_rules SET isEnabled = :enabled, updatedAt = :updatedAt WHERE id = :id")
     suspend fun setEnabled(id: Long, enabled: Boolean, updatedAt: Long = System.currentTimeMillis())
+
+    @Query(
+        """
+        UPDATE recurring_rules
+        SET isEnabled = 0, updatedAt = :updatedAt
+        WHERE deletedAt IS NULL
+            AND isEnabled = 1
+            AND (accountId = :accountId OR fromAccountId = :accountId OR toAccountId = :accountId)
+        """
+    )
+    suspend fun disableRulesForAccount(accountId: Long, updatedAt: Long = System.currentTimeMillis()): Int
+
+    @Query(
+        """
+        UPDATE recurring_rules
+        SET categoryId = NULL, updatedAt = :updatedAt
+        WHERE deletedAt IS NULL AND categoryId = :categoryId
+        """
+    )
+    suspend fun clearCategoryReferences(categoryId: Long, updatedAt: Long = System.currentTimeMillis()): Int
 
     @Query("UPDATE recurring_rules SET deletedAt = :deletedAt, updatedAt = :deletedAt WHERE id = :id")
     suspend fun softDelete(id: Long, deletedAt: Long = System.currentTimeMillis())

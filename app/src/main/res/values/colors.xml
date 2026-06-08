@@ -17,4 +17,5 @@
     <color name="ledger_panel">#F8F6EF</color>
     <color name="ledger_divider">#DFDCD3</color>
     <color name="ledger_expense_pink">#FF9AA9</color>
+    <color name="ic_launcher_background">#21A67A</color>
 </resources>
