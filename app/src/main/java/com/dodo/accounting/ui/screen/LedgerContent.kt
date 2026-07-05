@@ -386,7 +386,8 @@ internal fun LazyListScope.transactionDayGroups(
     emptyText: String = "暂无流水",
     showInlineActions: Boolean = true,
     onLongPress: ((TransactionWithDetails) -> Unit)? = null,
-    groupModifier: Modifier = Modifier
+    groupModifier: Modifier = Modifier,
+    amountsHidden: Boolean = false
 ) {
     val groups = transactions.groupedByDay()
     if (groups.isEmpty()) {
@@ -422,12 +423,13 @@ internal fun LazyListScope.transactionDayGroups(
     groups.forEach { group ->
         item(key = "day-${group.date}") {
             Column(modifier = groupModifier.fillMaxWidth()) {
-                TransactionDayHeader(group)
+                TransactionDayHeader(group, amountsHidden = amountsHidden)
                 group.items.forEachIndexed { index, transaction ->
                     TransactionRow(
                         item = transaction,
-                        onClick = onLongPress?.let { openActions -> { openActions(transaction) } },
+                        onClick = { onEditTransaction(transaction) },
                         onLongClick = onLongPress?.let { longPress -> { longPress(transaction) } },
+                        amountsHidden = amountsHidden,
                         trailing = {
                             if (showInlineActions) {
                                 Row {
@@ -454,10 +456,13 @@ internal fun LazyListScope.transactionDayGroups(
 }
 
 @Composable
-internal fun TransactionDayHeader(group: TransactionDayGroup) {
+internal fun TransactionDayHeader(
+    group: TransactionDayGroup,
+    amountsHidden: Boolean = false
+) {
     val summaryParts = buildList {
-        if (group.expenseCents > 0) add("支出 ${Money(group.expenseCents).format()}")
-        if (group.incomeCents > 0) add("收入 ${Money(group.incomeCents).format()}")
+        if (group.expenseCents > 0) add("支出 ${privacyAmountLabel(group.expenseCents, amountsHidden)}")
+        if (group.incomeCents > 0) add("收入 ${privacyAmountLabel(group.incomeCents, amountsHidden)}")
     }
     val today = LocalDate.now()
     val dayLabel = when (group.date) {
@@ -584,6 +589,7 @@ internal fun CalendarMonthGrid(
     selectedDate: LocalDate,
     transactions: List<TransactionWithDetails>,
     recurringRules: List<RecurringRuleEntity>,
+    amountsHidden: Boolean = false,
     onSelected: (LocalDate) -> Unit
 ) {
     val groupsByDate = transactions.groupedByDay().associateBy { it.date }
@@ -622,6 +628,7 @@ internal fun CalendarMonthGrid(
                             selected = day.date == selectedDate,
                             group = group,
                             reminderCount = reminderCount,
+                            amountsHidden = amountsHidden,
                             onClick = { onSelected(day.date) },
                             modifier = Modifier.weight(1f)
                         )
@@ -638,6 +645,7 @@ internal fun CalendarDayCell(
     selected: Boolean,
     group: TransactionDayGroup?,
     reminderCount: Int,
+    amountsHidden: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -647,6 +655,11 @@ internal fun CalendarDayCell(
         else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f)
     }
     val isToday = day.date == LocalDate.now()
+    val amountTextStyle = MaterialTheme.typography.labelSmall.copy(
+        fontSize = 9.sp,
+        lineHeight = 11.sp,
+        fontFamily = FontFamily.Monospace
+    )
     val dayTextColor = when {
         isToday -> Color.White
         day.inMonth -> MaterialTheme.colorScheme.onSurface
@@ -654,24 +667,24 @@ internal fun CalendarDayCell(
     }
     Surface(
         modifier = modifier
-            .heightIn(min = 64.dp)
+            .heightIn(min = 78.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
         color = container,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (selected) 1f else 0.34f))
     ) {
         Column(
-            modifier = Modifier.padding(6.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier.padding(5.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
             horizontalAlignment = Alignment.Start
         ) {
             Box(
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier.size(22.dp),
                 contentAlignment = Alignment.Center
             ) {
                 if (isToday) {
                     Surface(
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(22.dp),
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.primary
                     ) {}
@@ -686,22 +699,20 @@ internal fun CalendarDayCell(
             group?.let {
                 if (it.expenseCents > 0) {
                     Text(
-                        "-${Money(it.expenseCents).formatPlain()}",
-                        style = MaterialTheme.typography.labelSmall,
+                        calendarAmountLabel("-", it.expenseCents, amountsHidden),
+                        style = amountTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        fontFamily = FontFamily.Monospace
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 if (it.incomeCents > 0) {
                     Text(
-                        "+${Money(it.incomeCents).formatPlain()}",
-                        style = MaterialTheme.typography.labelSmall,
+                        calendarAmountLabel("+", it.incomeCents, amountsHidden),
+                        style = amountTextStyle,
                         color = MaterialTheme.colorScheme.secondary,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        fontFamily = FontFamily.Monospace
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -717,6 +728,18 @@ internal fun CalendarDayCell(
             }
         }
     }
+}
+
+private fun calendarAmountLabel(prefix: String, cents: Long, hidden: Boolean): String {
+    if (hidden) return "${prefix}****"
+    val absCents = if (cents < 0) -cents else cents
+    val body = if (absCents >= 1_000_000L) {
+        String.format(Locale.CHINA, "%.1f万", absCents / 1_000_000.0)
+            .replace(".0万", "万")
+    } else {
+        Money(absCents).formatPlain()
+    }
+    return "$prefix$body"
 }
 
 @Composable

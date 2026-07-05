@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand_primary">#1D9E75</color>
-    <color name="brand_primary_light">#16382E</color>
-    <color name="income_amount">#63D6AE</color>
-    <color name="expense_amount">#E8ECEA</color>
-    <color name="over_budget">#FF7370</color>
-    <color name="warning_amount">#FBBF24</color>
-    <color name="app_background">#101513</color>
-    <color name="app_surface">#171D1A</color>
-    <color name="app_surface_variant">#2A3D36</color>
-    <color name="app_on_surface">#E8ECEA</color>
-    <color name="app_on_surface_variant">#99E8ECEA</color>
-    <color name="app_outline">#38564B</color>
-    <color name="app_outline_variant">#284139</color>
-    <color name="ledger_mint">#1A3D30</color>
-    <color name="ledger_panel">#1D2925</color>
-    <color name="ledger_divider">#30423C</color>
-    <color name="ledger_expense_pink">#FFB2BF</color>
+    <color name="brand_primary">#8FAFBD</color>
+    <color name="brand_primary_light">#24363E</color>
+    <color name="income_amount">#9BD89F</color>
+    <color name="expense_amount">#F2F4F7</color>
+    <color name="over_budget">#F19999</color>
+    <color name="warning_amount">#F59E0B</color>
+    <color name="app_background">#111827</color>
+    <color name="app_surface">#1F2937</color>
+    <color name="app_surface_variant">#273345</color>
+    <color name="app_on_surface">#F9FAFB</color>
+    <color name="app_on_surface_variant">#CBD5E1</color>
+    <color name="app_outline">#475569</color>
+    <color name="app_outline_variant">#334155</color>
+    <color name="ledger_mint">#24363E</color>
+    <color name="ledger_panel">#273345</color>
+    <color name="ledger_divider">#334155</color>
+    <color name="ledger_expense_pink">#F19999</color>
 </resources>

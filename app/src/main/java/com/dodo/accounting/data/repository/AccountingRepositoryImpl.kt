@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.dodo.accounting.data.local.AccountingDatabase
 import com.dodo.accounting.data.local.SeedData
 import com.dodo.accounting.data.local.entity.AccountEntity
+import com.dodo.accounting.data.local.entity.AccountType
 import com.dodo.accounting.data.local.entity.BudgetEntity
 import com.dodo.accounting.data.local.entity.BudgetPeriod
 import com.dodo.accounting.data.local.entity.CategoryEntity
@@ -84,6 +85,29 @@ class AccountingRepositoryImpl @Inject constructor(
             account.copy(
                 name = trimmed,
                 sortOrder = nextSortOrder,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    override suspend fun updateAccount(
+        id: Long,
+        name: String,
+        type: AccountType,
+        initialBalanceCents: Long,
+        iconName: String,
+        colorArgb: Long
+    ) = database.withTransaction {
+        val trimmed = name.trim()
+        require(trimmed.isNotBlank()) { "账户名称不能为空" }
+        val existing = accountDao.getAccount(id)?.takeIf { it.deletedAt == null } ?: error("账户不存在")
+        accountDao.update(
+            existing.copy(
+                name = trimmed,
+                type = type,
+                initialBalanceCents = initialBalanceCents,
+                iconName = iconName.ifBlank { existing.iconName },
+                colorArgb = colorArgb,
                 updatedAt = System.currentTimeMillis()
             )
         )
@@ -247,12 +271,20 @@ class AccountingRepositoryImpl @Inject constructor(
         transactionDao.softDelete(id)
     }
 
+    override suspend fun softDeleteAllTransactions(): Int = database.withTransaction {
+        transactionDao.softDeleteAllActive()
+    }
+
     override suspend fun restoreTransaction(id: Long) {
         transactionDao.restore(id)
     }
 
     override suspend fun permanentlyDeleteTransaction(id: Long) {
         transactionDao.permanentlyDelete(id)
+    }
+
+    override suspend fun clearTrash() = database.withTransaction {
+        transactionDao.permanentlyDeleteTrash()
     }
 
     override suspend fun setMonthlyBudget(amountCents: Long): Long = database.withTransaction {

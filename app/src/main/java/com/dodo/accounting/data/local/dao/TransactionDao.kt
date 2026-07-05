@@ -157,11 +157,17 @@ interface TransactionDao {
     @Query("UPDATE transactions SET deletedAt = :deletedAt, updatedAt = :deletedAt WHERE id = :id")
     suspend fun softDelete(id: Long, deletedAt: Long = System.currentTimeMillis())
 
+    @Query("UPDATE transactions SET deletedAt = :deletedAt, updatedAt = :deletedAt WHERE deletedAt IS NULL")
+    suspend fun softDeleteAllActive(deletedAt: Long = System.currentTimeMillis()): Int
+
     @Query("UPDATE transactions SET deletedAt = NULL, updatedAt = :updatedAt WHERE id = :id")
     suspend fun restore(id: Long, updatedAt: Long = System.currentTimeMillis())
 
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun permanentlyDelete(id: Long)
+
+    @Query("DELETE FROM transactions WHERE deletedAt IS NOT NULL")
+    suspend fun permanentlyDeleteTrash()
 
     @Query("DELETE FROM transactions")
     suspend fun clearAll()

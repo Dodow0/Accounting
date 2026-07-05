@@ -15,13 +15,13 @@ import com.dodo.accounting.data.local.model.CategorySummaryRow
 import com.dodo.accounting.data.local.model.TransactionWithDetails
 import com.dodo.accounting.domain.model.AccountingSummary
 import com.dodo.accounting.domain.model.BackupPreview
+import com.dodo.accounting.domain.model.DateRange
 import com.dodo.accounting.domain.model.StatsPeriod
 import com.dodo.accounting.domain.model.rangeContaining
 import com.dodo.accounting.domain.repository.AccountingRepository
 import com.dodo.accounting.domain.usecase.AddTransactionUseCase
 import com.dodo.accounting.domain.usecase.EnsureSeedDataUseCase
 import com.dodo.accounting.domain.usecase.ExportBackupUseCase
-import com.dodo.accounting.domain.usecase.ObserveAccountingSummaryUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -52,12 +53,20 @@ data class AccountingUiState(
     val monthlyExpenseByCategory: List<CategorySummaryRow> = emptyList(),
     val entryMonthExpenseByCategory: List<CategorySummaryRow> = emptyList(),
     val recurringRules: List<RecurringRuleEntity> = emptyList(),
+    val homeTransactions: List<TransactionWithDetails> = emptyList(),
+    val homePeriod: HomePeriod = HomePeriod.MONTH,
+    val homeRangeStartMillis: Long = startOfMonthMillis(System.currentTimeMillis()),
+    val homeRangeEndMillis: Long = addMonthsMillis(startOfMonthMillis(System.currentTimeMillis()), 1),
     val calendarMonthTransactions: List<TransactionWithDetails> = emptyList(),
     val periodTransactions: List<TransactionWithDetails> = emptyList(),
     val trendTransactions: List<TransactionWithDetails> = emptyList(),
     val calendarMonthStartMillis: Long = startOfMonthMillis(System.currentTimeMillis()),
     val calendarSelectedDateMillis: Long = startOfDayMillis(System.currentTimeMillis()),
     val statsAnchorMillis: Long = startOfDayMillis(System.currentTimeMillis()),
+    val statsRangeMode: StatsRangeMode = StatsRangeMode.MONTH,
+    val statsRangeStartMillis: Long = startOfMonthMillis(System.currentTimeMillis()),
+    val statsRangeEndMillis: Long = addMonthsMillis(startOfMonthMillis(System.currentTimeMillis()), 1),
+    val statsRangeLabel: String = "",
     val editingTransaction: TransactionWithDetails? = null,
     val selectedPeriod: StatsPeriod = StatsPeriod.MONTH,
     val searchQuery: String = "",
@@ -84,20 +93,69 @@ enum class ExportFormat {
     CSV
 }
 
+enum class HomePeriod {
+    WEEK,
+    MONTH,
+    YEAR,
+    CUSTOM
+}
+
+enum class StatsRangeMode {
+    WEEK,
+    MONTH,
+    YEAR,
+    CUSTOM
+}
+
+private data class HomeRangeState(
+    val period: HomePeriod,
+    val startMillis: Long,
+    val endMillis: Long
+)
+
+private data class StatsCustomRangeState(
+    val startMillis: Long,
+    val endMillis: Long
+)
+
+private data class StatsRangeState(
+    val mode: StatsRangeMode,
+    val period: StatsPeriod,
+    val startMillis: Long,
+    val endMillis: Long,
+    val label: String
+)
+
+private data class HomeOverviewState(
+    val period: HomePeriod,
+    val startMillis: Long,
+    val endMillis: Long,
+    val transactions: List<TransactionWithDetails>
+)
+
+private data class CalendarHomeState(
+    val calendarMonthTransactions: List<TransactionWithDetails>,
+    val homeOverview: HomeOverviewState
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class AccountingViewModel @Inject constructor(
     private val repository: AccountingRepository,
     private val ensureSeedData: EnsureSeedDataUseCase,
     private val addTransaction: AddTransactionUseCase,
-    private val observeAccountingSummary: ObserveAccountingSummaryUseCase,
     private val exportBackup: ExportBackupUseCase
 ) : ViewModel() {
     private val selectedPeriod = MutableStateFlow(StatsPeriod.MONTH)
+    private val statsRangeMode = MutableStateFlow(StatsRangeMode.MONTH)
     private val searchQuery = MutableStateFlow("")
     private val searchType = MutableStateFlow<TransactionType?>(null)
     private val selectedAccountId = MutableStateFlow<Long?>(null)
     private val statsAnchorMillis = MutableStateFlow(startOfDayMillis(System.currentTimeMillis()))
+    private val statsCustomRange = MutableStateFlow(defaultStatsCustomRange())
+    private val homePeriod = MutableStateFlow(HomePeriod.MONTH)
+    private val homeAnchorMillis = MutableStateFlow(startOfDayMillis(System.currentTimeMillis()))
+    private val homeCustomRange = MutableStateFlow(defaultHomeCustomRange())
     private val calendarMonthStartMillis = MutableStateFlow(startOfMonthMillis(System.currentTimeMillis()))
     private val entryMonthStartMillis = MutableStateFlow(startOfMonthMillis(System.currentTimeMillis()))
     private val trendDataEnabled = MutableStateFlow(false)
@@ -117,10 +175,38 @@ class AccountingViewModel @Inject constructor(
         BackupActions(viewModelScope, repository, exportBackup, localState, ::showMessage)
     }
 
-    private val summaryFlow = combine(selectedPeriod, statsAnchorMillis) { period, anchorMillis ->
-        period to localDateFromMillis(anchorMillis)
-    }.flatMapLatest { (period, anchorDate) ->
-        observeAccountingSummary(period, anchorDate)
+    private val statsRangeFlow = combine(
+        statsRangeMode,
+        selectedPeriod,
+        statsAnchorMillis,
+        statsCustomRange
+    ) { mode, period, anchorMillis, customRange ->
+        when (mode) {
+            StatsRangeMode.WEEK -> StatsPeriod.WEEK.rangeContaining(localDateFromMillis(anchorMillis)).toStatsRangeState(mode, StatsPeriod.WEEK)
+            StatsRangeMode.MONTH -> StatsPeriod.MONTH.rangeContaining(localDateFromMillis(anchorMillis)).toStatsRangeState(mode, StatsPeriod.MONTH)
+            StatsRangeMode.YEAR -> StatsPeriod.YEAR.rangeContaining(localDateFromMillis(anchorMillis)).toStatsRangeState(mode, StatsPeriod.YEAR)
+            StatsRangeMode.CUSTOM -> StatsRangeState(
+                mode = StatsRangeMode.CUSTOM,
+                period = period,
+                startMillis = customRange.startMillis,
+                endMillis = customRange.endMillis,
+                label = customStatsRangeLabel(customRange.startMillis, customRange.endMillis)
+            )
+        }
+    }
+
+    private val summaryFlow = statsRangeFlow.flatMapLatest { range ->
+        combine(
+            repository.observePeriodSummary(range.startMillis, range.endMillis),
+            repository.observeExpenseByCategory(range.startMillis, range.endMillis)
+        ) { totals, expenseByCategory ->
+            AccountingSummary(
+                periodLabel = range.label,
+                period = range.period,
+                totals = totals,
+                expenseByCategory = expenseByCategory
+            )
+        }
     }
 
     private val searchFlow = combine(searchQuery, searchType, selectedAccountId) { query, type, accountId ->
@@ -140,6 +226,40 @@ class AccountingViewModel @Inject constructor(
             endAt = addMonthsMillis(monthStart, 1),
             limit = 1_000
         )
+    }
+
+    private val homeRangeFlow = combine(homePeriod, homeAnchorMillis, homeCustomRange) { period, anchorMillis, customRange ->
+        when (period) {
+            HomePeriod.WEEK -> {
+                val range = StatsPeriod.WEEK.rangeContaining(localDateFromMillis(anchorMillis))
+                HomeRangeState(period, range.startMillis, range.endMillis)
+            }
+            HomePeriod.MONTH -> {
+                val range = StatsPeriod.MONTH.rangeContaining(localDateFromMillis(anchorMillis))
+                HomeRangeState(period, range.startMillis, range.endMillis)
+            }
+            HomePeriod.YEAR -> {
+                val range = StatsPeriod.YEAR.rangeContaining(localDateFromMillis(anchorMillis))
+                HomeRangeState(period, range.startMillis, range.endMillis)
+            }
+            HomePeriod.CUSTOM -> customRange
+        }
+    }
+
+    private val homeOverviewFlow = homeRangeFlow.flatMapLatest { range ->
+        repository.searchTransactions(
+            query = "",
+            startAt = range.startMillis,
+            endAt = range.endMillis,
+            limit = 1_000
+        ).map { transactions ->
+            HomeOverviewState(
+                period = range.period,
+                startMillis = range.startMillis,
+                endMillis = range.endMillis,
+                transactions = transactions
+            )
+        }
     }
 
     private val currentMonthExpenseByCategoryFlow =
@@ -165,10 +285,7 @@ class AccountingViewModel @Inject constructor(
         )
     }
 
-    private val periodTransactionsFlow = combine(selectedPeriod, statsAnchorMillis) { period, anchorMillis ->
-        period to localDateFromMillis(anchorMillis)
-    }.flatMapLatest { (period, anchorDate) ->
-        val range = period.rangeContaining(anchorDate)
+    private val periodTransactionsFlow = statsRangeFlow.flatMapLatest { range ->
         repository.searchTransactions(
             query = "",
             startAt = range.startMillis,
@@ -229,18 +346,32 @@ class AccountingViewModel @Inject constructor(
         )
     }
 
+    private val calendarHomeState = combine(
+        calendarMonthTransactionsFlow,
+        homeOverviewFlow
+    ) { calendarMonthTransactions, homeOverview ->
+        CalendarHomeState(
+            calendarMonthTransactions = calendarMonthTransactions,
+            homeOverview = homeOverview
+        )
+    }
+
     private val screenDataState = combine(
         dataState,
         planningState,
-        calendarMonthTransactionsFlow,
+        calendarHomeState,
         categoryExpenseState,
         transactionBuckets
-    ) { data, planning, calendarMonthTransactions, categoryExpense, buckets ->
+    ) { data, planning, calendarHome, categoryExpense, buckets ->
         data.copy(
             monthlyBudget = planning.monthlyBudget,
             recurringRules = planning.recurringRules,
             categoryBudgets = planning.categoryBudgets,
-            calendarMonthTransactions = calendarMonthTransactions,
+            homeTransactions = calendarHome.homeOverview.transactions,
+            homePeriod = calendarHome.homeOverview.period,
+            homeRangeStartMillis = calendarHome.homeOverview.startMillis,
+            homeRangeEndMillis = calendarHome.homeOverview.endMillis,
+            calendarMonthTransactions = calendarHome.calendarMonthTransactions,
             monthlyExpenseByCategory = categoryExpense.monthlyExpenseByCategory,
             entryMonthExpenseByCategory = categoryExpense.entryMonthExpenseByCategory,
             periodTransactions = buckets.periodTransactions,
@@ -249,13 +380,23 @@ class AccountingViewModel @Inject constructor(
     }
 
     private val filterState = combine(
-        selectedPeriod,
+        statsRangeFlow,
         statsAnchorMillis,
         searchQuery,
         searchType,
         selectedAccountId
-    ) { period, statsAnchorMillis, query, type, accountId ->
-        FilterState(period, statsAnchorMillis, query, type, accountId)
+    ) { statsRange, statsAnchorMillis, query, type, accountId ->
+        FilterState(
+            period = statsRange.period,
+            statsAnchorMillis = statsAnchorMillis,
+            statsRangeMode = statsRange.mode,
+            statsRangeStartMillis = statsRange.startMillis,
+            statsRangeEndMillis = statsRange.endMillis,
+            statsRangeLabel = statsRange.label,
+            query = query,
+            type = type,
+            accountId = accountId
+        )
     }
 
     private val screenState = combine(
@@ -279,11 +420,19 @@ class AccountingViewModel @Inject constructor(
             monthlyExpenseByCategory = data.monthlyExpenseByCategory,
             entryMonthExpenseByCategory = data.entryMonthExpenseByCategory,
             recurringRules = data.recurringRules,
+            homeTransactions = data.homeTransactions,
+            homePeriod = data.homePeriod,
+            homeRangeStartMillis = data.homeRangeStartMillis,
+            homeRangeEndMillis = data.homeRangeEndMillis,
             calendarMonthTransactions = data.calendarMonthTransactions,
             periodTransactions = data.periodTransactions,
             trendTransactions = data.trendTransactions,
             selectedPeriod = filters.period,
             statsAnchorMillis = filters.statsAnchorMillis,
+            statsRangeMode = filters.statsRangeMode,
+            statsRangeStartMillis = filters.statsRangeStartMillis,
+            statsRangeEndMillis = filters.statsRangeEndMillis,
+            statsRangeLabel = filters.statsRangeLabel,
             searchQuery = filters.query,
             searchType = filters.type,
             selectedAccountId = filters.accountId,
@@ -329,18 +478,50 @@ class AccountingViewModel @Inject constructor(
 
     fun setPeriod(period: StatsPeriod) {
         selectedPeriod.value = period
+        statsRangeMode.value = period.toStatsRangeMode()
+    }
+
+    fun setStatsRangeMode(mode: StatsRangeMode) {
+        when (mode) {
+            StatsRangeMode.WEEK -> setPeriod(StatsPeriod.WEEK)
+            StatsRangeMode.MONTH -> setPeriod(StatsPeriod.MONTH)
+            StatsRangeMode.YEAR -> setPeriod(StatsPeriod.YEAR)
+            StatsRangeMode.CUSTOM -> statsRangeMode.value = StatsRangeMode.CUSTOM
+        }
     }
 
     fun moveStatsPeriod(delta: Int) {
-        statsAnchorMillis.value = movePeriodAnchorMillis(
-            millis = statsAnchorMillis.value,
-            period = selectedPeriod.value,
-            delta = delta
-        )
+        if (statsRangeMode.value == StatsRangeMode.CUSTOM) {
+            val range = statsCustomRange.value
+            val days = ((range.endMillis - range.startMillis) / DAY_MILLIS).coerceAtLeast(1L).toInt()
+            statsCustomRange.value = range.copy(
+                startMillis = addDaysMillis(range.startMillis, days * delta),
+                endMillis = addDaysMillis(range.endMillis, days * delta)
+            )
+        } else {
+            statsAnchorMillis.value = movePeriodAnchorMillis(
+                millis = statsAnchorMillis.value,
+                period = selectedPeriod.value,
+                delta = delta
+            )
+        }
     }
 
     fun resetStatsPeriod() {
         statsAnchorMillis.value = startOfDayMillis(System.currentTimeMillis())
+        if (statsRangeMode.value == StatsRangeMode.CUSTOM) {
+            statsCustomRange.value = defaultStatsCustomRange()
+        }
+    }
+
+    fun setStatsCustomRange(startMillis: Long, endMillis: Long) {
+        val start = startOfDayMillis(minOf(startMillis, endMillis))
+        val endInclusive = startOfDayMillis(maxOf(startMillis, endMillis))
+        statsCustomRange.value = StatsCustomRangeState(
+            startMillis = start,
+            endMillis = addDaysMillis(endInclusive, 1)
+        )
+        statsRangeMode.value = StatsRangeMode.CUSTOM
     }
 
     fun setTrendDataEnabled(enabled: Boolean) {
@@ -357,6 +538,43 @@ class AccountingViewModel @Inject constructor(
 
     fun setSelectedAccount(accountId: Long?) {
         selectedAccountId.value = accountId
+    }
+
+    fun setHomePeriod(period: HomePeriod) {
+        homePeriod.value = period
+    }
+
+    fun moveHomePeriod(delta: Int) {
+        when (homePeriod.value) {
+            HomePeriod.WEEK -> {
+                homeAnchorMillis.value = movePeriodAnchorMillis(homeAnchorMillis.value, StatsPeriod.WEEK, delta)
+            }
+            HomePeriod.MONTH -> {
+                homeAnchorMillis.value = movePeriodAnchorMillis(homeAnchorMillis.value, StatsPeriod.MONTH, delta)
+            }
+            HomePeriod.YEAR -> {
+                homeAnchorMillis.value = movePeriodAnchorMillis(homeAnchorMillis.value, StatsPeriod.YEAR, delta)
+            }
+            HomePeriod.CUSTOM -> {
+                val range = homeCustomRange.value
+                val days = ((range.endMillis - range.startMillis) / DAY_MILLIS).coerceAtLeast(1L).toInt()
+                homeCustomRange.value = range.copy(
+                    startMillis = addDaysMillis(range.startMillis, days * delta),
+                    endMillis = addDaysMillis(range.endMillis, days * delta)
+                )
+            }
+        }
+    }
+
+    fun setHomeCustomRange(startMillis: Long, endMillis: Long) {
+        val start = startOfDayMillis(minOf(startMillis, endMillis))
+        val endInclusive = startOfDayMillis(maxOf(startMillis, endMillis))
+        homeCustomRange.value = HomeRangeState(
+            period = HomePeriod.CUSTOM,
+            startMillis = start,
+            endMillis = addDaysMillis(endInclusive, 1)
+        )
+        homePeriod.value = HomePeriod.CUSTOM
     }
 
     fun moveCalendarMonth(deltaMonths: Int) {
@@ -457,8 +675,74 @@ class AccountingViewModel @Inject constructor(
         occurredAt = occurredAt
     )
 
+    suspend fun addEntryTransaction(
+        type: TransactionType,
+        amount: String,
+        accountId: Long?,
+        fromAccountId: Long?,
+        toAccountId: Long?,
+        categoryId: Long?,
+        merchant: String,
+        note: String,
+        tagIds: List<Long> = emptyList(),
+        occurredAt: Long
+    ): Result<Unit> = transactionActions.addEntryTransaction(
+        type = type,
+        amount = amount,
+        accountId = accountId,
+        fromAccountId = fromAccountId,
+        toAccountId = toAccountId,
+        categoryId = categoryId,
+        merchant = merchant,
+        note = note,
+        tagIds = tagIds,
+        occurredAt = occurredAt
+    )
+
+    suspend fun saveEditedTransactionAwait(
+        transactionId: Long,
+        type: TransactionType,
+        amount: String,
+        accountId: Long?,
+        fromAccountId: Long?,
+        toAccountId: Long?,
+        categoryId: Long?,
+        merchant: String,
+        note: String,
+        tagIds: List<Long> = emptyList(),
+        occurredAt: Long
+    ): Result<Unit> = transactionActions.saveEditedTransactionAwait(
+        transactionId = transactionId,
+        type = type,
+        amount = amount,
+        accountId = accountId,
+        fromAccountId = fromAccountId,
+        toAccountId = toAccountId,
+        categoryId = categoryId,
+        merchant = merchant,
+        note = note,
+        tagIds = tagIds,
+        occurredAt = occurredAt
+    )
+
     fun addAccount(name: String, type: AccountType, initialBalance: String) =
         managementActions.addAccount(name, type, initialBalance)
+
+    fun updateAccount(
+        id: Long,
+        name: String,
+        type: AccountType,
+        initialBalance: String,
+        iconName: String,
+        colorArgb: Long
+    ) = managementActions.updateAccount(
+        id = id,
+        name = name,
+        type = type,
+        initialBalance = initialBalance,
+        iconName = iconName,
+        colorArgb = colorArgb
+    )
 
     fun archiveAccount(accountId: Long) = managementActions.archiveAccount(accountId)
 
@@ -471,6 +755,10 @@ class AccountingViewModel @Inject constructor(
     fun restoreTransaction(transactionId: Long) = transactionActions.restoreTransaction(transactionId)
 
     fun permanentlyDeleteTransaction(transactionId: Long) = transactionActions.permanentlyDeleteTransaction(transactionId)
+
+    fun clearTrash() = transactionActions.clearTrash()
+
+    fun moveAllTransactionsToTrash() = transactionActions.moveAllTransactionsToTrash()
 
     fun setMonthlyBudget(amount: String) = planningActions.setMonthlyBudget(amount)
 
@@ -508,7 +796,12 @@ class AccountingViewModel @Inject constructor(
 
     fun addTag(name: String) = managementActions.addTag(name)
 
-    fun addCategory(name: String, kind: CategoryKind) = managementActions.addCategory(name, kind)
+    fun addCategory(
+        name: String,
+        kind: CategoryKind,
+        iconName: String = if (kind == CategoryKind.EXPENSE) "receipt_long" else "work",
+        colorArgb: Long = if (kind == CategoryKind.EXPENSE) 0xFFEA580C else 0xFF16A34A
+    ) = managementActions.addCategory(name, kind, iconName, colorArgb)
 
     fun renameCategory(id: Long, name: String) = managementActions.renameCategory(id, name)
 
@@ -556,6 +849,10 @@ class AccountingViewModel @Inject constructor(
         val recurringRules: List<RecurringRuleEntity> = emptyList(),
         val monthlyExpenseByCategory: List<CategorySummaryRow> = emptyList(),
         val entryMonthExpenseByCategory: List<CategorySummaryRow> = emptyList(),
+        val homeTransactions: List<TransactionWithDetails> = emptyList(),
+        val homePeriod: HomePeriod = HomePeriod.MONTH,
+        val homeRangeStartMillis: Long = startOfMonthMillis(System.currentTimeMillis()),
+        val homeRangeEndMillis: Long = addMonthsMillis(startOfMonthMillis(System.currentTimeMillis()), 1),
         val calendarMonthTransactions: List<TransactionWithDetails> = emptyList(),
         val periodTransactions: List<TransactionWithDetails> = emptyList(),
         val trendTransactions: List<TransactionWithDetails> = emptyList()
@@ -580,6 +877,10 @@ class AccountingViewModel @Inject constructor(
     private data class FilterState(
         val period: StatsPeriod,
         val statsAnchorMillis: Long,
+        val statsRangeMode: StatsRangeMode,
+        val statsRangeStartMillis: Long,
+        val statsRangeEndMillis: Long,
+        val statsRangeLabel: String,
         val query: String,
         val type: TransactionType?,
         val accountId: Long?
@@ -588,6 +889,25 @@ class AccountingViewModel @Inject constructor(
 
 private fun localDateFromMillis(millis: Long): java.time.LocalDate {
     return Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
+}
+
+private fun DateRange.toStatsRangeState(
+    mode: StatsRangeMode,
+    period: StatsPeriod
+): StatsRangeState {
+    return StatsRangeState(
+        mode = mode,
+        period = period,
+        startMillis = startMillis,
+        endMillis = endMillis,
+        label = label
+    )
+}
+
+private fun StatsPeriod.toStatsRangeMode(): StatsRangeMode = when (this) {
+    StatsPeriod.WEEK -> StatsRangeMode.WEEK
+    StatsPeriod.MONTH -> StatsRangeMode.MONTH
+    StatsPeriod.YEAR -> StatsRangeMode.YEAR
 }
 
 private fun movePeriodAnchorMillis(
@@ -605,9 +925,51 @@ private fun movePeriodAnchorMillis(
     }.timeInMillis.let(::startOfDayMillis)
 }
 
+private const val DAY_MILLIS = 24L * 60L * 60L * 1000L
+
+private fun defaultHomeCustomRange(): HomeRangeState {
+    val start = startOfMonthMillis(System.currentTimeMillis())
+    return HomeRangeState(
+        period = HomePeriod.CUSTOM,
+        startMillis = start,
+        endMillis = addMonthsMillis(start, 1)
+    )
+}
+
+private fun defaultStatsCustomRange(): StatsCustomRangeState {
+    val start = startOfMonthMillis(System.currentTimeMillis())
+    return StatsCustomRangeState(
+        startMillis = start,
+        endMillis = addMonthsMillis(start, 1)
+    )
+}
+
+private fun customStatsRangeLabel(startMillis: Long, endMillis: Long): String {
+    val start = localDateFromMillis(startMillis)
+    val endInclusive = localDateFromMillis(addDaysMillis(endMillis, -1))
+    return if (start == endInclusive) {
+        "${start.year}-${start.monthValue.toString().padStart(2, '0')}-${start.dayOfMonth.toString().padStart(2, '0')}"
+    } else {
+        val startLabel = "${start.year}-${start.monthValue.toString().padStart(2, '0')}-${start.dayOfMonth.toString().padStart(2, '0')}"
+        val endLabel = "${endInclusive.year}-${endInclusive.monthValue.toString().padStart(2, '0')}-${endInclusive.dayOfMonth.toString().padStart(2, '0')}"
+        "$startLabel - $endLabel"
+    }
+}
+
 private fun startOfDayMillis(millis: Long): Long {
     return Calendar.getInstance().apply {
         timeInMillis = millis
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+}
+
+private fun addDaysMillis(millis: Long, deltaDays: Int): Long {
+    return Calendar.getInstance().apply {
+        timeInMillis = millis
+        add(Calendar.DAY_OF_YEAR, deltaDays)
         set(Calendar.HOUR_OF_DAY, 0)
         set(Calendar.MINUTE, 0)
         set(Calendar.SECOND, 0)

@@ -99,6 +99,42 @@ class AccountingRepositoryImplTest {
     }
 
     @Test
+    fun softDeleteAllTransactionsMovesActiveRowsToTrashWithoutPermanentDeletion() = runTest {
+        repository.ensureSeedData()
+        val cash = repository.observeActiveAccounts().first().first { it.name == "现金" }
+        val bank = repository.observeActiveAccounts().first().first { it.name == "银行卡" }
+
+        val incomeId = repository.addTransaction(
+            TransactionDraft(
+                type = TransactionType.INCOME,
+                amountCents = 10_000,
+                accountId = cash.id
+            )
+        )
+        val transferId = repository.addTransaction(
+            TransactionDraft(
+                type = TransactionType.TRANSFER,
+                amountCents = 3_000,
+                fromAccountId = cash.id,
+                toAccountId = bank.id
+            )
+        )
+
+        val movedCount = repository.softDeleteAllTransactions()
+
+        assertEquals(2, movedCount)
+        assertTrue(repository.observeRecentTransactions().first().isEmpty())
+        assertEquals(setOf(incomeId, transferId), repository.observeTrash().first().map { it.transaction.id }.toSet())
+        assertEquals(0L, repository.observeAccountBalances().first().first { it.account.id == cash.id }.balanceCents)
+
+        repository.restoreTransaction(incomeId)
+
+        assertEquals(1, repository.observeRecentTransactions().first().size)
+        assertEquals(1, repository.observeTrash().first().size)
+        assertEquals(10_000L, repository.observeAccountBalances().first().first { it.account.id == cash.id }.balanceCents)
+    }
+
+    @Test
     fun jsonPreviewCountsBackupContentAndImportReplacesCurrentData() = runTest {
         repository.ensureSeedData()
         val cash = repository.observeActiveAccounts().first().first { it.name == "现金" }
@@ -176,6 +212,34 @@ class AccountingRepositoryImplTest {
         assertEquals(AccountRemovalAction.DELETED, result.action)
         assertTrue(repository.observeAccounts().first().none { it.id == emptyAccountId })
         assertTrue(repository.observeAccountBalances().first().none { it.account.id == emptyAccountId })
+    }
+
+    @Test
+    fun updateAccountChangesEditableFieldsAndPreservesBalanceHistory() = runTest {
+        val accountId = repository.addAccount(
+            AccountEntity(
+                name = "  旧账户  ",
+                type = AccountType.CASH,
+                initialBalanceCents = 1_000
+            )
+        )
+
+        repository.updateAccount(
+            id = accountId,
+            name = "  工资卡  ",
+            type = AccountType.BANK_CARD,
+            initialBalanceCents = 2_500,
+            iconName = "credit_card",
+            colorArgb = 0xFF0891B2
+        )
+
+        val row = repository.observeAccountBalances().first().single { it.account.id == accountId }
+        assertEquals("工资卡", row.account.name)
+        assertEquals(AccountType.BANK_CARD, row.account.type)
+        assertEquals(2_500L, row.account.initialBalanceCents)
+        assertEquals("credit_card", row.account.iconName)
+        assertEquals(0xFF0891B2, row.account.colorArgb)
+        assertEquals(2_500L, row.balanceCents)
     }
 
     @Test

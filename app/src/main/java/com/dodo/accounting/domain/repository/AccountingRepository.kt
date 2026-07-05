@@ -1,6 +1,7 @@
 package com.dodo.accounting.domain.repository
 
 import com.dodo.accounting.data.local.entity.AccountEntity
+import com.dodo.accounting.data.local.entity.AccountType
 import com.dodo.accounting.data.local.entity.BudgetEntity
 import com.dodo.accounting.data.local.entity.CategoryEntity
 import com.dodo.accounting.data.local.entity.CategoryKind
@@ -41,6 +42,14 @@ interface AccountingRepository {
     fun observeRecurringRules(): Flow<List<RecurringRuleEntity>>
 
     suspend fun addAccount(account: AccountEntity): Long
+    suspend fun updateAccount(
+        id: Long,
+        name: String,
+        type: AccountType,
+        initialBalanceCents: Long,
+        iconName: String,
+        colorArgb: Long
+    )
     suspend fun archiveAccount(id: Long, archived: Boolean): AccountRemovalResult
     suspend fun deleteAccount(id: Long): AccountRemovalResult
     suspend fun addCategory(category: CategoryEntity): Long
@@ -51,8 +60,10 @@ interface AccountingRepository {
     suspend fun addTransaction(draft: TransactionDraft): Long
     suspend fun updateTransaction(id: Long, draft: TransactionDraft)
     suspend fun softDeleteTransaction(id: Long)
+    suspend fun softDeleteAllTransactions(): Int
     suspend fun restoreTransaction(id: Long)
     suspend fun permanentlyDeleteTransaction(id: Long)
+    suspend fun clearTrash()
     suspend fun setMonthlyBudget(amountCents: Long): Long
     suspend fun setCategoryBudget(categoryId: Long, categoryName: String, amountCents: Long): Long
     suspend fun addRecurringRule(rule: RecurringRuleEntity): Long

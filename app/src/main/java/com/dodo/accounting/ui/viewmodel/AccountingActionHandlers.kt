@@ -147,29 +147,96 @@ internal class TransactionActions(
         occurredAt: Long
     ) {
         scope.launch {
-            runCatching {
-                repository.updateTransaction(
-                    transactionId,
-                    createDraft(
-                        type = type,
-                        amount = amount,
-                        occurredAt = occurredAt,
-                        accountId = accountId,
-                        fromAccountId = fromAccountId,
-                        toAccountId = toAccountId,
-                        categoryId = categoryId,
-                        merchant = merchant,
-                        note = note,
-                        tagIds = tagIds
-                    )
-                )
-            }
-                .onSuccess {
-                    localState.update { state -> state.copy(editingTransaction = null) }
-                    showMessage("流水已更新")
-                }
-                .onFailure { showMessage(it.message ?: "更新失败") }
+            saveEditedTransactionAwait(
+                transactionId = transactionId,
+                type = type,
+                amount = amount,
+                accountId = accountId,
+                fromAccountId = fromAccountId,
+                toAccountId = toAccountId,
+                categoryId = categoryId,
+                merchant = merchant,
+                note = note,
+                tagIds = tagIds,
+                occurredAt = occurredAt
+            )
         }
+    }
+
+    suspend fun addEntryTransaction(
+        type: TransactionType,
+        amount: String,
+        accountId: Long?,
+        fromAccountId: Long?,
+        toAccountId: Long?,
+        categoryId: Long?,
+        merchant: String,
+        note: String,
+        tagIds: List<Long> = emptyList(),
+        occurredAt: Long
+    ): Result<Unit> {
+        val successMessage = when (type) {
+            TransactionType.EXPENSE -> "支出已记录"
+            TransactionType.INCOME -> "收入已记录"
+            TransactionType.TRANSFER -> "转账已记录"
+            TransactionType.BALANCE_ADJUSTMENT -> "余额校正已记录"
+        }
+        return runCatching {
+            addTransaction(
+                createDraft(
+                    type = type,
+                    amount = amount,
+                    occurredAt = occurredAt,
+                    accountId = accountId,
+                    fromAccountId = fromAccountId,
+                    toAccountId = toAccountId,
+                    categoryId = categoryId,
+                    merchant = merchant,
+                    note = note,
+                    tagIds = tagIds
+                )
+            )
+            Unit
+        }
+            .onSuccess { showMessage(successMessage) }
+            .onFailure { showMessage(it.message ?: "记录失败") }
+    }
+
+    suspend fun saveEditedTransactionAwait(
+        transactionId: Long,
+        type: TransactionType,
+        amount: String,
+        accountId: Long?,
+        fromAccountId: Long?,
+        toAccountId: Long?,
+        categoryId: Long?,
+        merchant: String,
+        note: String,
+        tagIds: List<Long> = emptyList(),
+        occurredAt: Long
+    ): Result<Unit> {
+        return runCatching {
+            repository.updateTransaction(
+                transactionId,
+                createDraft(
+                    type = type,
+                    amount = amount,
+                    occurredAt = occurredAt,
+                    accountId = accountId,
+                    fromAccountId = fromAccountId,
+                    toAccountId = toAccountId,
+                    categoryId = categoryId,
+                    merchant = merchant,
+                    note = note,
+                    tagIds = tagIds
+                )
+            )
+        }
+            .onSuccess {
+                localState.update { state -> state.copy(editingTransaction = null) }
+                showMessage("流水已更新")
+            }
+            .onFailure { showMessage(it.message ?: "更新失败") }
     }
 
     fun deleteTransaction(transactionId: Long) {
@@ -193,6 +260,24 @@ internal class TransactionActions(
             runCatching { repository.permanentlyDeleteTransaction(transactionId) }
                 .onSuccess { showMessage("已彻底删除") }
                 .onFailure { showMessage(it.message ?: "彻底删除失败") }
+        }
+    }
+
+    fun clearTrash() {
+        scope.launch {
+            runCatching { repository.clearTrash() }
+                .onSuccess { showMessage("回收站已清空") }
+                .onFailure { showMessage(it.message ?: "清空回收站失败") }
+        }
+    }
+
+    fun moveAllTransactionsToTrash() {
+        scope.launch {
+            runCatching { repository.softDeleteAllTransactions() }
+                .onSuccess { count ->
+                    showMessage(if (count > 0) "已将 $count 条流水移入回收站" else "没有可清空的流水")
+                }
+                .onFailure { showMessage(it.message ?: "清空流水失败") }
         }
     }
 
@@ -339,6 +424,33 @@ internal class ManagementActions(
         }
     }
 
+    fun updateAccount(
+        id: Long,
+        name: String,
+        type: AccountType,
+        initialBalance: String,
+        iconName: String,
+        colorArgb: Long
+    ) {
+        scope.launch {
+            runCatching {
+                require(name.isNotBlank()) { "账户名称不能为空" }
+                repository.updateAccount(
+                    id = id,
+                    name = name.trim(),
+                    type = type,
+                    initialBalanceCents = Money.requireMajorStrict(initialBalance).cents,
+                    iconName = iconName,
+                    colorArgb = colorArgb
+                )
+            }.onSuccess {
+                showMessage("账户已更新")
+            }.onFailure {
+                showMessage(it.message ?: "更新账户失败")
+            }
+        }
+    }
+
     fun archiveAccount(id: Long) {
         scope.launch {
             runCatching { repository.archiveAccount(id, true) }
@@ -371,15 +483,20 @@ internal class ManagementActions(
         }
     }
 
-    fun addCategory(name: String, kind: CategoryKind) {
+    fun addCategory(
+        name: String,
+        kind: CategoryKind,
+        iconName: String = if (kind == CategoryKind.EXPENSE) "receipt_long" else "work",
+        colorArgb: Long = if (kind == CategoryKind.EXPENSE) 0xFFEA580C else 0xFF16A34A
+    ) {
         scope.launch {
             runCatching {
                 repository.addCategory(
                     CategoryEntity(
                         name = name,
                         kind = kind,
-                        colorArgb = if (kind == CategoryKind.EXPENSE) 0xFFEA580C else 0xFF16A34A,
-                        iconName = if (kind == CategoryKind.EXPENSE) "receipt_long" else "work"
+                        colorArgb = colorArgb,
+                        iconName = iconName
                     )
                 )
             }

@@ -70,6 +70,7 @@ import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Commute
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DateRange
@@ -96,6 +97,7 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Wallet
 import androidx.compose.material.icons.filled.Work
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -184,10 +186,41 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+internal data class EntryPrefillDraft(
+    val type: TransactionType = TransactionType.EXPENSE,
+    val amount: String = "",
+    val accountId: Long? = null,
+    val fromAccountId: Long? = null,
+    val toAccountId: Long? = null,
+    val categoryId: Long? = null,
+    val note: String = "",
+    val tagIds: Set<Long> = emptySet(),
+    val occurredAt: Long = System.currentTimeMillis()
+)
+
+private data class EntryFormSnapshot(
+    val type: TransactionType,
+    val amount: String,
+    val accountId: Long?,
+    val fromAccountId: Long?,
+    val toAccountId: Long?,
+    val categoryId: Long?,
+    val merchant: String,
+    val note: String,
+    val tagIds: Set<Long>,
+    val occurredAt: Long
+)
+
+private const val AMOUNT_KEY_SAVE_AND_CONTINUE = "再记一笔"
+
 @Composable
 internal fun EntrySheetContentV2(
     uiState: AccountingUiState,
     viewModel: AccountingViewModel,
+    prefillDraft: EntryPrefillDraft? = null,
+    entryPreferences: EntryPreferences = EntryPreferences(),
+    dismissRequestSignal: Int = 0,
+    onPrefillConsumed: () -> Unit = {},
     onDone: () -> Unit
 ) {
     val editing = uiState.editingTransaction
@@ -203,24 +236,51 @@ internal fun EntrySheetContentV2(
     var occurredAt by remember { mutableStateOf(System.currentTimeMillis()) }
     var formError by remember { mutableStateOf<String?>(null) }
     var cursorVisible by remember { mutableStateOf(true) }
-    var detailsExpanded by remember { mutableStateOf(false) }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showDiscardConfirm by remember { mutableStateOf(false) }
+    var pendingTagNameToSelect by remember { mutableStateOf<String?>(null) }
+    var calculatorVisible by remember { mutableStateOf(true) }
     val contentScrollState = rememberScrollState()
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val scope = rememberCoroutineScope()
+
+    fun activeAccountIdOrNull(id: Long?): Long? {
+        return uiState.activeAccounts.firstOrNull { it.id == id }?.id
+    }
+
+    fun preferredAccountId(): Long? {
+        return activeAccountIdOrNull(entryPreferences.defaultAccountId)
+            ?: uiState.activeAccounts.firstOrNull()?.id
+    }
+
+    fun transferTargetFor(sourceAccountId: Long?): Long? {
+        return uiState.activeAccounts.firstOrNull { it.id != sourceAccountId }?.id
+    }
 
     fun clearForm() {
+        val defaultAccountId = preferredAccountId()
         amount = ""
         merchant = ""
         note = ""
         formError = null
-        detailsExpanded = false
         selectedTagIds = emptySet()
+        pendingTagNameToSelect = null
+        selectedType = entryPreferences.defaultType
         categoryId = null
-        occurredAt = System.currentTimeMillis()
-        accountId = uiState.activeAccounts.firstOrNull()?.id
-        fromAccountId = uiState.activeAccounts.firstOrNull()?.id
-        toAccountId = uiState.activeAccounts.drop(1).firstOrNull()?.id
+        occurredAt = if (entryPreferences.useCurrentTime) System.currentTimeMillis() else occurredAt
+        accountId = defaultAccountId
+        fromAccountId = defaultAccountId
+        toAccountId = transferTargetFor(defaultAccountId)
     }
 
-    LaunchedEffect(editing?.transaction?.id, uiState.activeAccounts.size) {
+    LaunchedEffect(
+        editing?.transaction?.id,
+        uiState.activeAccounts.size,
+        entryPreferences.defaultType,
+        entryPreferences.defaultAccountId,
+        entryPreferences.useCurrentTime
+    ) {
         if (editing != null) {
             val transaction = editing.transaction
             selectedType = transaction.type
@@ -231,7 +291,6 @@ internal fun EntrySheetContentV2(
             categoryId = transaction.categoryId
             merchant = transaction.merchant
             note = transaction.note
-            detailsExpanded = transaction.merchant.isNotBlank() || transaction.note.isNotBlank()
             selectedTagIds = editing.tags.map { it.id }.toSet()
             occurredAt = transaction.occurredAt
         } else if (amount.isBlank() && accountId == null && fromAccountId == null) {
@@ -239,17 +298,41 @@ internal fun EntrySheetContentV2(
         }
     }
 
+    LaunchedEffect(prefillDraft) {
+        val draft = prefillDraft ?: return@LaunchedEffect
+        if (editing == null) {
+            val defaultAccountId = preferredAccountId()
+            val draftAccountId = activeAccountIdOrNull(draft.accountId)
+            val draftFromAccountId = activeAccountIdOrNull(draft.fromAccountId) ?: defaultAccountId
+            val draftToAccountId = activeAccountIdOrNull(draft.toAccountId)
+            selectedType = draft.type
+            amount = draft.amount
+            accountId = draftAccountId ?: defaultAccountId
+            fromAccountId = draftFromAccountId
+            toAccountId = draftToAccountId
+                ?.takeIf { it != draftFromAccountId }
+                ?: transferTargetFor(draftFromAccountId)
+            categoryId = draft.categoryId
+            merchant = ""
+            note = draft.note
+            selectedTagIds = draft.tagIds
+            occurredAt = draft.occurredAt
+            formError = null
+        }
+        onPrefillConsumed()
+    }
+
+    LaunchedEffect(uiState.tags, pendingTagNameToSelect) {
+        val pendingName = pendingTagNameToSelect ?: return@LaunchedEffect
+        val tag = uiState.tags.firstOrNull { it.name == pendingName } ?: return@LaunchedEffect
+        selectedTagIds = selectedTagIds + tag.id
+        pendingTagNameToSelect = null
+    }
+
     LaunchedEffect(Unit) {
         while (true) {
             delay(520)
             cursorVisible = !cursorVisible
-        }
-    }
-
-    LaunchedEffect(detailsExpanded) {
-        if (detailsExpanded) {
-            delay(120)
-            contentScrollState.animateScrollTo(contentScrollState.maxValue)
         }
     }
 
@@ -262,51 +345,168 @@ internal fun EntrySheetContentV2(
         TransactionType.EXPENSE -> uiState.expenseCategories
         else -> emptyList()
     }
-    val sortedCategories = remember(categories, uiState.recentTransactions) {
-        categories.sortedByCommonUsage(uiState.recentTransactions)
+    val sortedCategories = remember(categories, uiState.recentTransactions, entryPreferences.commonCategoryFirst) {
+        if (entryPreferences.commonCategoryFirst) {
+            categories.sortedByCommonUsage(uiState.recentTransactions)
+        } else {
+            categories.sortedWith(compareBy<CategoryEntity> { it.sortOrder }.thenBy { it.createdAt })
+        }
+    }
+    val sortedTags = remember(uiState.tags, uiState.recentTransactions, entryPreferences.tagSuggestionsEnabled) {
+        if (entryPreferences.tagSuggestionsEnabled) {
+            uiState.tags.sortedTagsByCommonUsage(uiState.recentTransactions)
+        } else {
+            uiState.tags.sortedWith(compareBy<TagEntity> { it.createdAt }.thenBy { it.name })
+        }
     }
     val selectedCategory = categories.firstOrNull { it.id == categoryId }
     val amountColor = transactionColor(selectedType)
     val hasPendingCalculation = hasUnresolvedAmountExpression(amount)
     val pendingCalculationColor = Color(0xFFF59E0B)
 
-    fun submit() {
+    fun currentSnapshot(): EntryFormSnapshot {
+        return EntryFormSnapshot(
+            type = selectedType,
+            amount = amount.trim(),
+            accountId = accountId,
+            fromAccountId = fromAccountId,
+            toAccountId = toAccountId,
+            categoryId = categoryId,
+            merchant = merchant.trim(),
+            note = note.trim(),
+            tagIds = selectedTagIds,
+            occurredAt = occurredAt
+        )
+    }
+
+    fun editingSnapshot(transaction: TransactionWithDetails): EntryFormSnapshot {
+        return EntryFormSnapshot(
+            type = transaction.transaction.type,
+            amount = Money(transaction.transaction.amountCents).formatPlain(),
+            accountId = transaction.transaction.accountId,
+            fromAccountId = transaction.transaction.fromAccountId,
+            toAccountId = transaction.transaction.toAccountId,
+            categoryId = transaction.transaction.categoryId,
+            merchant = transaction.transaction.merchant.trim(),
+            note = transaction.transaction.note.trim(),
+            tagIds = transaction.tags.map { it.id }.toSet(),
+            occurredAt = transaction.transaction.occurredAt
+        )
+    }
+
+    val hasUnsavedChanges = if (editing != null) {
+        currentSnapshot() != editingSnapshot(editing)
+    } else {
+        amount.isNotBlank() ||
+            merchant.isNotBlank() ||
+            note.isNotBlank() ||
+            categoryId != null ||
+            selectedTagIds.isNotEmpty() ||
+            selectedType != entryPreferences.defaultType
+    }
+
+    fun closeWithoutSaving() {
+        showDiscardConfirm = false
+        showDeleteConfirm = false
+        viewModel.cancelEditTransaction()
+        onDone()
+    }
+
+    fun requestClose() {
+        if (isSubmitting) {
+            formError = "正在保存，请稍候"
+            return
+        }
+        if (hasUnsavedChanges) {
+            showDiscardConfirm = true
+        } else {
+            closeWithoutSaving()
+        }
+    }
+
+    BackHandler {
+        requestClose()
+    }
+
+    var lastHandledDismissRequestSignal by remember { mutableStateOf(dismissRequestSignal) }
+    LaunchedEffect(dismissRequestSignal) {
+        if (dismissRequestSignal > lastHandledDismissRequestSignal) {
+            lastHandledDismissRequestSignal = dismissRequestSignal
+            requestClose()
+        }
+    }
+
+    fun submit(keepOpenAfterSave: Boolean = false) {
+        if (isSubmitting) return
         val submittedAmount = normalizedAmountInput(amount)
         val validationError = validateEntryDraft(
             type = selectedType,
             amount = submittedAmount,
             accountId = accountId,
             fromAccountId = fromAccountId,
-            toAccountId = toAccountId
+            toAccountId = toAccountId,
+            categoryId = categoryId
         )
         if (validationError != null) {
             formError = validationError
             return
         }
-        if (editing == null) {
-            when (selectedType) {
-                TransactionType.EXPENSE -> viewModel.addExpense(submittedAmount, accountId, categoryId, merchant, note, selectedTagIds.toList(), occurredAt)
-                TransactionType.INCOME -> viewModel.addIncome(submittedAmount, accountId, categoryId, merchant, note, selectedTagIds.toList(), occurredAt)
-                TransactionType.TRANSFER -> viewModel.addTransfer(submittedAmount, fromAccountId, toAccountId, note, selectedTagIds.toList(), occurredAt)
-                TransactionType.BALANCE_ADJUSTMENT -> viewModel.addBalanceAdjustment(submittedAmount, accountId, note, selectedTagIds.toList(), occurredAt)
+        amount = submittedAmount
+        formError = null
+        isSubmitting = true
+        scope.launch {
+            val result = if (editing == null) {
+                viewModel.addEntryTransaction(
+                    type = selectedType,
+                    amount = submittedAmount,
+                    accountId = accountId,
+                    fromAccountId = fromAccountId,
+                    toAccountId = toAccountId,
+                    categoryId = categoryId,
+                    merchant = merchant,
+                    note = note,
+                    tagIds = selectedTagIds.toList(),
+                    occurredAt = occurredAt
+                )
+            } else {
+                viewModel.saveEditedTransactionAwait(
+                    transactionId = editing.transaction.id,
+                    type = selectedType,
+                    amount = submittedAmount,
+                    accountId = accountId,
+                    fromAccountId = fromAccountId,
+                    toAccountId = toAccountId,
+                    categoryId = categoryId,
+                    merchant = merchant,
+                    note = note,
+                    tagIds = selectedTagIds.toList(),
+                    occurredAt = occurredAt
+                )
             }
-            clearForm()
-        } else {
-            viewModel.saveEditedTransaction(
-                transactionId = editing.transaction.id,
-                type = selectedType,
-                amount = submittedAmount,
-                accountId = accountId,
-                fromAccountId = fromAccountId,
-                toAccountId = toAccountId,
-                categoryId = categoryId,
-                merchant = merchant,
-                note = note,
-                tagIds = selectedTagIds.toList(),
-                occurredAt = occurredAt
-            )
+            isSubmitting = false
+            result
+                .onSuccess {
+                    val shouldContinue = editing == null && (keepOpenAfterSave || entryPreferences.continueAfterSave)
+                    if (shouldContinue) {
+                        clearForm()
+                    } else {
+                        if (editing == null) clearForm()
+                        onDone()
+                    }
+                }
+                .onFailure { error ->
+                    formError = error.message ?: if (editing == null) "记录失败，请稍后再试" else "保存失败，请稍后再试"
+                }
         }
-        onDone()
+    }
+
+    fun confirmAmountOrSubmit() {
+        if (hasPendingCalculation) {
+            amount = normalizedAmountInput(amount)
+            formError = null
+        } else {
+            submit()
+        }
     }
 
     Column(
@@ -314,40 +514,50 @@ internal fun EntrySheetContentV2(
             .fillMaxWidth()
             .heightIn(min = 520.dp, max = 760.dp)
             .navigationBarsPadding()
-            .background(MaterialTheme.colorScheme.background)
+            .background(MaterialTheme.colorScheme.surface)
     ) {
-        Surface(
+        Row(
             modifier = Modifier
-                .fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = {
-                        viewModel.cancelEditTransaction()
-                        onDone()
+            Spacer(Modifier.size(40.dp))
+            CompactAccountPicker(
+                label = if (selectedType == TransactionType.TRANSFER) "转出账户" else "账户",
+                accounts = uiState.activeAccounts,
+                selectedAccountId = if (selectedType == TransactionType.TRANSFER) fromAccountId else accountId,
+                onSelected = { selectedId ->
+                    if (selectedType == TransactionType.TRANSFER) {
+                        fromAccountId = selectedId
+                        if (toAccountId == selectedId) {
+                            toAccountId = transferTargetFor(selectedId)
+                        }
+                    } else {
+                        accountId = selectedId
                     }
-                ) {
-                    Text("取消", color = MaterialTheme.colorScheme.onSurface)
-                }
-                Text(
-                    if (editing == null) "记一笔" else "编辑流水",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    formError = null
+                },
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(
+                onClick = { requestClose() },
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "关闭",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                TextButton(onClick = ::submit) {
-                    Text(
-                        "完成",
-                        color = if (hasPendingCalculation) pendingCalculationColor else MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
             }
+        }
+        if (isSubmitting) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.primaryContainer
+            )
         }
 
         Column(
@@ -357,7 +567,13 @@ internal fun EntrySheetContentV2(
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            LedgerCard {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface, LedgerCardShape)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
                 TypeSelector(selectedType = selectedType, onTypeSelected = {
                     selectedType = it
                     categoryId = null
@@ -365,7 +581,12 @@ internal fun EntrySheetContentV2(
                 })
 
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .ledgerPressClickable(onClick = {
+                            focusManager.clearFocus()
+                            calculatorVisible = true
+                        }),
                     horizontalAlignment = Alignment.End
                 ) {
                     Row(
@@ -434,118 +655,154 @@ internal fun EntrySheetContentV2(
                     )
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    EntryActionPill(
-                        label = if (note.isBlank()) "添加备注" else "已备注",
-                        icon = Icons.Default.Edit,
-                        modifier = Modifier.weight(1f),
-                        showLabel = false,
-                        onClick = { detailsExpanded = !detailsExpanded }
-                    )
-                    EntryActionPill(
-                        label = dateChipLabel(occurredAt),
-                        icon = Icons.Default.DateRange,
-                        modifier = Modifier.weight(1f),
-                        showLabel = false,
-                        onClick = { detailsExpanded = true }
-                    )
-                    EntryActionPill(
-                        label = if (selectedType == TransactionType.TRANSFER) "转账账户" else selectedAccountName(uiState.activeAccounts, accountId),
-                        icon = Icons.Default.Payments,
-                        modifier = Modifier.weight(1f),
-                        showLabel = false,
-                        onClick = { detailsExpanded = true }
+                if (selectedType == TransactionType.TRANSFER) {
+                    AccountPickerField(
+                        label = "转入账户",
+                        accounts = uiState.activeAccounts,
+                        selectedAccountId = toAccountId,
+                        onSelected = {
+                            toAccountId = it
+                            formError = null
+                        }
                     )
                 }
-
-                AnimatedVisibility(visible = detailsExpanded) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        if (selectedType == TransactionType.TRANSFER) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Box(modifier = Modifier.weight(1f)) {
-                                    AccountPickerField(
-                                        label = "转出",
-                                        accounts = uiState.activeAccounts,
-                                        selectedAccountId = fromAccountId,
-                                        onSelected = {
-                                            fromAccountId = it
-                                            formError = null
-                                        }
-                                    )
-                                }
-                                Box(modifier = Modifier.weight(1f)) {
-                                    AccountPickerField(
-                                        label = "转入",
-                                        accounts = uiState.activeAccounts,
-                                        selectedAccountId = toAccountId,
-                                        onSelected = {
-                                            toAccountId = it
-                                            formError = null
-                                        }
-                                    )
-                                }
-                            }
+                DateTimeSelector(
+                    occurredAt = occurredAt,
+                    onChanged = { occurredAt = it }
+                )
+                TagSelector(
+                    tags = sortedTags,
+                    selectedTagIds = selectedTagIds,
+                    onToggle = { tagId ->
+                        selectedTagIds = if (tagId in selectedTagIds) {
+                            selectedTagIds - tagId
                         } else {
-                            AccountPickerField(
-                                label = "账户",
-                                accounts = uiState.activeAccounts,
-                                selectedAccountId = accountId,
-                                onSelected = {
-                                    accountId = it
-                                    formError = null
-                                }
-                            )
+                            selectedTagIds + tagId
                         }
-                        DateTimeSelector(
-                            occurredAt = occurredAt,
-                            onChanged = { occurredAt = it }
-                        )
-                        if (selectedType != TransactionType.TRANSFER && selectedType != TransactionType.BALANCE_ADJUSTMENT) {
-                            MinimalInputLine(
-                                value = merchant,
-                                onValueChange = { merchant = it },
-                                placeholder = "商户",
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                            )
+                    },
+                    onAddTag = { name ->
+                        val trimmed = name.trim()
+                        if (trimmed.isBlank()) return@TagSelector
+                        val existingTag = uiState.tags.firstOrNull { it.name == trimmed }
+                        if (existingTag != null) {
+                            selectedTagIds = selectedTagIds + existingTag.id
+                        } else {
+                            pendingTagNameToSelect = trimmed
+                            viewModel.addTag(trimmed)
                         }
-                        MinimalInputLine(
-                            value = note,
-                            onValueChange = { note = it },
-                            placeholder = "备注",
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = false,
-                            minLines = 1,
-                            maxLines = 3
-                        )
-                        if (uiState.tags.isNotEmpty()) {
-                            TagSelector(
-                                tags = uiState.tags,
-                                selectedTagIds = selectedTagIds,
-                                onToggle = { tagId ->
-                                    selectedTagIds = if (tagId in selectedTagIds) {
-                                        selectedTagIds - tagId
-                                    } else {
-                                        selectedTagIds + tagId
-                                    }
-                                }
+                    }
+                )
+                MinimalInputLine(
+                    value = note,
+                    onValueChange = { note = it },
+                    placeholder = "备注（可选）",
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    minLines = 1,
+                    maxLines = 3,
+                    onFocusedChange = { focused ->
+                        if (focused) calculatorVisible = false
+                    }
+                )
+                if (editing != null) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .ledgerPressClickable(onClick = { showDeleteConfirm = true }),
+                        shape = LedgerCardShape,
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.42f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.22f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
                             )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "移入回收站",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    "可在设置中的回收站恢复或彻底删除",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        AmountKeypad(
-            value = amount,
-            onValueChange = {
-                amount = it
-                formError = null
+        AnimatedVisibility(
+            visible = calculatorVisible,
+            enter = fadeIn(animationSpec = tween(durationMillis = 140)),
+            exit = fadeOut(animationSpec = tween(durationMillis = 120))
+        ) {
+            AmountKeypad(
+                value = amount,
+                onValueChange = {
+                    amount = it
+                    formError = null
+                },
+                hasPendingCalculation = hasPendingCalculation,
+                onConfirm = { confirmAmountOrSubmit() },
+                confirmEnabled = !isSubmitting,
+                onSaveAndContinue = { submit(keepOpenAfterSave = true) },
+                saveAndContinueEnabled = editing == null && !isSubmitting
+            )
+        }
+    }
+
+    if (showDeleteConfirm && editing != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("移入回收站？") },
+            text = { Text("这条流水会从首页、统计和资产余额中移除，但仍可在设置的回收站中恢复。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteTransaction(editing.transaction.id)
+                        viewModel.cancelEditTransaction()
+                        showDeleteConfirm = false
+                        onDone()
+                    }
+                ) {
+                    Text("移入回收站", color = MaterialTheme.colorScheme.error)
+                }
             },
-            hasPendingCalculation = hasPendingCalculation
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    if (showDiscardConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirm = false },
+            title = { Text("放弃这次修改？") },
+            text = { Text("当前 Sheet 中还有未保存内容，关闭后这些修改不会保留。") },
+            confirmButton = {
+                TextButton(onClick = ::closeWithoutSaving) {
+                    Text("放弃", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirm = false }) {
+                    Text("继续编辑")
+                }
+            }
         )
     }
 }
@@ -797,7 +1054,8 @@ internal fun MinimalInputLine(
     minLines: Int = 1,
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    focusRequester: FocusRequester? = null
+    focusRequester: FocusRequester? = null,
+    onFocusedChange: (Boolean) -> Unit = {}
 ) {
     var focused by remember { mutableStateOf(false) }
     val lineColor = if (focused) MaterialTheme.colorScheme.primary else LedgerDivider
@@ -809,7 +1067,10 @@ internal fun MinimalInputLine(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
-                .onFocusChanged { focused = it.isFocused },
+                .onFocusChanged {
+                    focused = it.isFocused
+                    onFocusedChange(it.isFocused)
+                },
             textStyle = MaterialTheme.typography.bodyMedium.copy(
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Medium
@@ -863,6 +1124,23 @@ internal fun List<CategoryEntity>.sortedByCommonUsage(
     )
 }
 
+internal fun List<TagEntity>.sortedTagsByCommonUsage(
+    recentTransactions: List<TransactionWithDetails>
+): List<TagEntity> {
+    val usageScore = mutableMapOf<Long, Int>()
+    recentTransactions.forEachIndexed { index, item ->
+        val recencyScore = (recentTransactions.size - index).coerceAtLeast(1)
+        item.tags.forEach { tag ->
+            usageScore[tag.id] = (usageScore[tag.id] ?: 0) + 100 + recencyScore
+        }
+    }
+    return sortedWith(
+        compareByDescending<TagEntity> { usageScore[it.id] ?: 0 }
+            .thenBy { it.createdAt }
+            .thenBy { it.name }
+    )
+}
+
 internal fun dateChipLabel(millis: Long): String {
     val date = localDateFromMillis(millis)
     val today = LocalDate.now()
@@ -888,7 +1166,8 @@ internal fun validateEntryDraft(
     amount: String,
     accountId: Long?,
     fromAccountId: Long?,
-    toAccountId: Long?
+    toAccountId: Long?,
+    categoryId: Long?
 ): String? {
     if (hasUnresolvedAmountExpression(amount)) {
         return "请先完成金额计算"
@@ -899,7 +1178,11 @@ internal fun validateEntryDraft(
         return "请输入有效金额"
     }
     return when (type) {
-        TransactionType.EXPENSE, TransactionType.INCOME -> if (accountId == null) "请选择账户" else null
+        TransactionType.EXPENSE, TransactionType.INCOME -> when {
+            accountId == null -> "请选择账户"
+            categoryId == null -> "请选择分类"
+            else -> null
+        }
         TransactionType.TRANSFER -> when {
             fromAccountId == null -> "请选择转出账户"
             toAccountId == null -> "请选择转入账户"
@@ -1201,14 +1484,18 @@ internal fun dateTimeToMillis(
 internal fun AmountKeypad(
     value: String,
     onValueChange: (String) -> Unit,
-    hasPendingCalculation: Boolean = false
+    hasPendingCalculation: Boolean = false,
+    onConfirm: () -> Unit = {},
+    confirmEnabled: Boolean = true,
+    onSaveAndContinue: () -> Unit = {},
+    saveAndContinueEnabled: Boolean = true
 ) {
+    val confirmLabel = if (hasPendingCalculation) "=" else "完成"
     val rows = listOf(
-        listOf("7", "8", "9", "÷"),
-        listOf("4", "5", "6", "×"),
-        listOf("1", "2", "3", "-"),
-        listOf(".", "0", "⌫", "+"),
-        listOf("=")
+        listOf("7", "8", "9", "⌫"),
+        listOf("4", "5", "6", "-"),
+        listOf("1", "2", "3", "+"),
+        listOf(".", "0", AMOUNT_KEY_SAVE_AND_CONTINUE, confirmLabel)
     )
 
     Surface(
@@ -1223,12 +1510,23 @@ internal fun AmountKeypad(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     row.forEach { key ->
+                        val isSaveAndContinue = key == AMOUNT_KEY_SAVE_AND_CONTINUE
+                        val isConfirm = key == confirmLabel
                         AmountKey(
                             label = key,
                             modifier = Modifier.weight(1f),
+                            enabled = when {
+                                isSaveAndContinue -> saveAndContinueEnabled
+                                isConfirm -> confirmEnabled
+                                else -> true
+                            },
                             confirmColor = if (hasPendingCalculation) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary,
                             onClick = {
-                                onValueChange(handleAmountKey(value, key))
+                                when {
+                                    isSaveAndContinue -> onSaveAndContinue()
+                                    isConfirm -> onConfirm()
+                                    else -> onValueChange(handleAmountKey(value, key))
+                                }
                             }
                         )
                     }
@@ -1242,22 +1540,37 @@ internal fun AmountKeypad(
 internal fun AmountKey(
     label: String,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     confirmColor: Color = MaterialTheme.colorScheme.primary,
     onClick: () -> Unit
 ) {
-    val isOperator = label in setOf("+", "-", "×", "÷")
-    val isConfirm = label == "="
+    val isOperator = label in setOf("+", "-")
+    val isConfirm = label == "=" || label == "完成"
+    val isSaveAndContinue = label == AMOUNT_KEY_SAVE_AND_CONTINUE
     val haptic = LocalHapticFeedback.current
     val clickWithFeedback = {
-        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-        onClick()
+        if (enabled) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onClick()
+        }
     }
+    val keyModifier = if (enabled) {
+        Modifier.ledgerPressClickable(onClick = clickWithFeedback)
+    } else {
+        Modifier
+    }
+    val containerColor = when {
+        isConfirm -> confirmColor
+        isSaveAndContinue -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val contentAlpha = if (enabled) 1f else 0.38f
 
     Surface(
         modifier = modifier
             .height(58.dp)
-            .ledgerPressClickable(onClick = clickWithFeedback),
-        color = if (isConfirm) confirmColor else MaterialTheme.colorScheme.surfaceVariant,
+            .then(keyModifier),
+        color = containerColor.copy(alpha = if (enabled) 1f else 0.52f),
         border = BorderStroke(0.5.dp, LedgerDivider)
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -1265,22 +1578,130 @@ internal fun AmountKey(
                 label == "⌫" -> Icon(
                     Icons.AutoMirrored.Filled.Backspace,
                     contentDescription = "退格",
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha),
                     modifier = Modifier.size(24.dp)
                 )
                 isConfirm -> Text(
-                    "=",
-                    color = Color.White,
+                    label,
+                    color = Color.White.copy(alpha = contentAlpha),
                     fontWeight = FontWeight.Bold,
-                    fontSize = 28.sp
+                    fontSize = if (label == "=") 28.sp else 15.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                isSaveAndContinue -> Text(
+                    label,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = contentAlpha),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 else -> Text(
                     label,
-                    color = if (isOperator) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    color = (if (isOperator) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface).copy(alpha = contentAlpha),
                     fontWeight = FontWeight.Medium,
                     fontSize = 24.sp
                 )
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun CompactAccountPicker(
+    label: String,
+    accounts: List<AccountEntity>,
+    selectedAccountId: Long?,
+    onSelected: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = accounts.firstOrNull { it.id == selectedAccountId }
+    val tint = selected?.let { Color(it.colorArgb) } ?: MaterialTheme.colorScheme.primary
+
+    Surface(
+        modifier = modifier
+            .padding(horizontal = 8.dp)
+            .height(44.dp)
+            .clickable(onClick = { expanded = true }),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Surface(
+                modifier = Modifier.size(28.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = tint.copy(alpha = 0.14f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        selected?.let { accountIcon(it) } ?: Icons.Default.AccountBalanceWallet,
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Column(
+                modifier = Modifier.weight(1f, fill = false),
+                horizontalAlignment = Alignment.Start
+            ) {
+                Text(
+                    selected?.name ?: "请选择",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+
+    if (expanded) {
+        ModalBottomSheet(
+            onDismissRequest = { expanded = false },
+            containerColor = MaterialTheme.colorScheme.background
+        ) {
+            LedgerCard(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                SelectionSheetHeader(title = label, subtitle = "${accounts.size} 个账户")
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    contentPadding = PaddingValues(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(accounts, key = { it.id }) { account ->
+                        AccountGridItem(
+                            account = account,
+                            selected = account.id == selectedAccountId,
+                            onClick = {
+                                onSelected(account.id)
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
         }
     }
 }
@@ -1547,8 +1968,11 @@ internal fun SelectionGridItem(
 internal fun TagSelector(
     tags: List<TagEntity>,
     selectedTagIds: Set<Long>,
-    onToggle: (Long) -> Unit
+    onToggle: (Long) -> Unit,
+    onAddTag: (String) -> Unit
 ) {
+    var showAddTagSheet by remember { mutableStateOf(false) }
+
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             "标签",
@@ -1566,6 +1990,115 @@ internal fun TagSelector(
                     onClick = { onToggle(tag.id) }
                 )
             }
+            AddTagPill(onClick = { showAddTagSheet = true })
+        }
+        if (tags.isEmpty()) {
+            Text(
+                "还没有标签，可以先添加一个固定标签",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    if (showAddTagSheet) {
+        AddTagSheet(
+            onDismiss = { showAddTagSheet = false },
+            onConfirm = { name ->
+                onAddTag(name)
+                showAddTagSheet = false
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddTagSheet(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var tagName by remember { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = null
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .size(width = 42.dp, height = 5.dp),
+                shape = RoundedCornerShape(999.dp),
+                color = LedgerDivider
+            ) {}
+            Text("添加标签", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            MinimalInputLine(
+                value = tagName,
+                onValueChange = { tagName = it },
+                placeholder = "标签名称",
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                LedgerActionButton(
+                    label = "取消",
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    borderColor = LedgerDivider
+                )
+                LedgerActionButton(
+                    label = "添加并选择",
+                    icon = Icons.Default.Add,
+                    onClick = { onConfirm(tagName) },
+                    modifier = Modifier.weight(1f),
+                    enabled = tagName.isNotBlank()
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+    }
+}
+
+@Composable
+internal fun AddTagPill(
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .height(34.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(17.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, LedgerDivider)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Add,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                "添加",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }

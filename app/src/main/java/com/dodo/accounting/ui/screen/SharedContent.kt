@@ -58,6 +58,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Label
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
@@ -66,29 +67,52 @@ import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.AttachMoney
+import androidx.compose.material.icons.filled.BusinessCenter
+import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.ChildCare
 import androidx.compose.material.icons.filled.Commute
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.DirectionsBus
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Fastfood
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.FlightTakeoff
+import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Hotel
+import androidx.compose.material.icons.filled.LocalCafe
+import androidx.compose.material.icons.filled.LocalGasStation
+import androidx.compose.material.icons.filled.LocalGroceryStore
+import androidx.compose.material.icons.filled.LocalHospital
+import androidx.compose.material.icons.filled.LocalLaundryService
+import androidx.compose.material.icons.filled.LocalMall
+import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.MonetizationOn
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PhoneIphone
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Train
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Wallet
 import androidx.compose.material.icons.filled.Work
@@ -340,6 +364,7 @@ internal fun TransactionRow(
     item: TransactionWithDetails,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
+    amountsHidden: Boolean = false,
     trailing: @Composable () -> Unit
 ) {
     val transaction = item.transaction
@@ -407,7 +432,7 @@ internal fun TransactionRow(
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                plainAmountLabel(transaction.type, transaction.amountCents),
+                plainAmountLabel(transaction.type, transaction.amountCents, amountsHidden),
                 color = transactionColor(transaction.type),
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = FontFamily.Monospace,
@@ -483,44 +508,17 @@ internal fun CategoryManagementCard(
     uiState: AccountingUiState,
     viewModel: AccountingViewModel
 ) {
-    var newCategoryName by remember { mutableStateOf("") }
-    var selectedKind by remember { mutableStateOf(CategoryKind.EXPENSE) }
+    var showCreateCategorySheet by remember { mutableStateOf(false) }
     var categoryToEdit by remember { mutableStateOf<CategoryEntity?>(null) }
 
     LedgerCard {
             SectionHeader("分类管理", "${uiState.categories.size} 类")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(CategoryKind.EXPENSE, CategoryKind.INCOME).forEach { kind ->
-                    LedgerChoiceChip(
-                        selected = selectedKind == kind,
-                        label = categoryKindLabel(kind),
-                        onClick = { selectedKind = kind },
-                    )
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                MinimalInputLine(
-                    value = newCategoryName,
-                    onValueChange = { newCategoryName = it },
-                    placeholder = "新分类名称",
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
-                )
-                LedgerIconActionButton(
-                    icon = Icons.Default.Add,
-                    contentDescription = "新增分类",
-                    onClick = {
-                        if (newCategoryName.isNotBlank()) {
-                            viewModel.addCategory(newCategoryName, selectedKind)
-                            newCategoryName = ""
-                        }
-                    }
-                )
-            }
+            LedgerActionButton(
+                label = "新增分类",
+                icon = Icons.Default.Add,
+                onClick = { showCreateCategorySheet = true },
+                modifier = Modifier.fillMaxWidth()
+            )
             uiState.categories.groupBy { it.kind }.forEach { (kind, categories) ->
                 Text(
                     categoryKindLabel(kind),
@@ -555,6 +553,149 @@ internal fun CategoryManagementCard(
                 categoryToEdit = null
             }
         )
+    }
+
+    if (showCreateCategorySheet) {
+        CategoryCreateSheet(
+            onDismiss = { showCreateCategorySheet = false },
+            onSave = { name, kind, iconName, colorArgb ->
+                viewModel.addCategory(name, kind, iconName, colorArgb)
+                showCreateCategorySheet = false
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CategoryCreateSheet(
+    onDismiss: () -> Unit,
+    onSave: (String, CategoryKind, String, Long) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var kind by remember { mutableStateOf(CategoryKind.EXPENSE) }
+    var iconName by remember { mutableStateOf("receipt_long") }
+    var colorArgb by remember { mutableStateOf(0xFFEA580C) }
+    var iconQuery by remember { mutableStateOf("") }
+
+    fun selectKind(nextKind: CategoryKind) {
+        if (kind == nextKind) return
+        kind = nextKind
+        iconName = if (nextKind == CategoryKind.EXPENSE) "receipt_long" else "work"
+        colorArgb = if (nextKind == CategoryKind.EXPENSE) 0xFFEA580C else 0xFF16A34A
+        iconQuery = ""
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.background
+    ) {
+        LedgerCard(
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("新增分类", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                TextButton(
+                    onClick = { onSave(name.trim(), kind, iconName, colorArgb) },
+                    enabled = name.isNotBlank()
+                ) {
+                    Text("保存", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
+            }
+            MinimalInputLine(
+                value = name,
+                onValueChange = { name = it },
+                placeholder = "分类名称",
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Text("类型", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(CategoryKind.EXPENSE, CategoryKind.INCOME).forEach { option ->
+                    LedgerChoiceChip(
+                        selected = kind == option,
+                        label = categoryKindLabel(option),
+                        onClick = { selectKind(option) }
+                    )
+                }
+            }
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = LedgerCardShape,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                border = BorderStroke(1.dp, LedgerDivider)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.size(42.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(colorArgb).copy(alpha = 0.14f)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(categoryIcon(iconName), contentDescription = null, tint = Color(colorArgb))
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            name.ifBlank { "新分类预览" },
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            "${categoryKindLabel(kind)} · ${categoryIconLabel(iconName)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+            CategoryIconPicker(
+                kind = kind,
+                selectedIconName = iconName,
+                query = iconQuery,
+                tint = Color(colorArgb),
+                onQueryChange = { iconQuery = it },
+                onSelected = { iconName = it }
+            )
+            Text("颜色", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                categoryColorOptions().forEach { option ->
+                    Surface(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clickable { colorArgb = option },
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(option),
+                        border = BorderStroke(
+                            if (colorArgb == option) 3.dp else 1.dp,
+                            if (colorArgb == option) MaterialTheme.colorScheme.onSurface else LedgerDivider
+                        )
+                    ) {}
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+        Spacer(Modifier.height(14.dp))
     }
 }
 
@@ -634,6 +775,7 @@ internal fun CategoryEditDialog(
     var iconName by remember(category.id) { mutableStateOf(category.iconName) }
     var colorArgb by remember(category.id) { mutableStateOf(category.colorArgb) }
     var confirmDelete by remember(category.id) { mutableStateOf(false) }
+    var iconQuery by remember(category.id) { mutableStateOf("") }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -663,21 +805,14 @@ internal fun CategoryEditDialog(
                 placeholder = "分类名称",
                 modifier = Modifier.fillMaxWidth()
             )
-            Text("图标", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                categoryIconOptions(category.kind).forEach { option ->
-                    CategoryEditPill(
-                        selected = iconName == option,
-                        label = categoryIconLabel(option),
-                        icon = categoryIcon(option),
-                        tint = Color(colorArgb),
-                        onClick = { iconName = option }
-                    )
-                }
-            }
+            CategoryIconPicker(
+                kind = category.kind,
+                selectedIconName = iconName,
+                query = iconQuery,
+                tint = Color(colorArgb),
+                onQueryChange = { iconQuery = it },
+                onSelected = { iconName = it }
+            )
             Text("颜色", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -716,6 +851,75 @@ internal fun CategoryEditDialog(
             Spacer(Modifier.height(14.dp))
         }
         Spacer(Modifier.height(14.dp))
+    }
+}
+
+@Composable
+private fun CategoryIconPicker(
+    kind: CategoryKind,
+    selectedIconName: String,
+    query: String,
+    tint: Color,
+    onQueryChange: (String) -> Unit,
+    onSelected: (String) -> Unit
+) {
+    val groups = remember(kind) { categoryIconGroups(kind) }
+    val trimmedQuery = query.trim()
+    val visibleGroups = remember(groups, trimmedQuery) {
+        if (trimmedQuery.isBlank()) {
+            groups
+        } else {
+            val normalized = trimmedQuery.lowercase()
+            val matches = groups
+                .flatMap { it.options }
+                .distinctBy { it.name }
+                .filter { option ->
+                    option.name.contains(normalized, ignoreCase = true) ||
+                        option.label.contains(trimmedQuery, ignoreCase = true) ||
+                        option.keywords.any { keyword -> keyword.contains(trimmedQuery, ignoreCase = true) }
+                }
+            listOf(CategoryIconGroup("搜索结果", matches))
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("图标", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        MinimalInputLine(
+            value = query,
+            onValueChange = onQueryChange,
+            placeholder = "搜索图标：餐饮、交通、医疗、收入...",
+            modifier = Modifier.fillMaxWidth()
+        )
+        visibleGroups.forEach { group ->
+            if (group.options.isNotEmpty()) {
+                Text(
+                    group.title,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    group.options.forEach { option ->
+                        CategoryEditPill(
+                            selected = selectedIconName == option.name,
+                            label = option.label,
+                            icon = categoryIcon(option.name),
+                            tint = tint,
+                            onClick = { onSelected(option.name) }
+                        )
+                    }
+                }
+            }
+        }
+        if (visibleGroups.all { it.options.isEmpty() }) {
+            Text(
+                "没有匹配的图标",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -1180,15 +1384,22 @@ internal fun InfoCard(text: String) {
     }
 }
 
-internal fun accountIcon(account: AccountEntity): ImageVector = when (account.iconName) {
+internal fun accountIcon(account: AccountEntity): ImageVector = accountIcon(account.iconName, account.type)
+
+internal fun accountIcon(iconName: String, fallbackType: AccountType = AccountType.CUSTOM): ImageVector = when (iconName) {
     "payments" -> Icons.Default.Payments
     "credit_card" -> Icons.Default.CreditCard
     "chat" -> Icons.AutoMirrored.Filled.Chat
     "account_balance_wallet" -> Icons.Default.AccountBalanceWallet
+    "wallet" -> Icons.Default.Wallet
     "phone_iphone" -> Icons.Default.PhoneIphone
     "directions_bus" -> Icons.Default.DirectionsBus
     "storefront" -> Icons.Default.Storefront
-    else -> accountIcon(account.type)
+    "savings" -> Icons.Default.Savings
+    "add_card" -> Icons.Default.AddCard
+    "assessment" -> Icons.Default.Assessment
+    "business_center" -> Icons.Default.BusinessCenter
+    else -> accountIcon(fallbackType)
 }
 
 internal fun accountIcon(type: AccountType): ImageVector = when (type) {
@@ -1201,24 +1412,101 @@ internal fun accountIcon(type: AccountType): ImageVector = when (type) {
     AccountType.CUSTOM -> Icons.Default.Wallet
 }
 
+private data class AccountIconOption(
+    val name: String,
+    val label: String,
+    val keywords: List<String> = emptyList()
+)
+
+private fun allAccountIconOptions(): List<AccountIconOption> = listOf(
+    AccountIconOption("account_balance_wallet", "钱包", listOf("余额", "账户", "支付")),
+    AccountIconOption("payments", "现金", listOf("现金", "收支", "付款")),
+    AccountIconOption("credit_card", "卡片", listOf("银行卡", "信用卡", "储值卡")),
+    AccountIconOption("chat", "聊天支付", listOf("微信", "社交", "转账")),
+    AccountIconOption("wallet", "零钱包", listOf("钱包", "现金包")),
+    AccountIconOption("phone_iphone", "手机", listOf("手机", "数字余额", "电子")),
+    AccountIconOption("directions_bus", "交通卡", listOf("公交", "地铁", "通勤")),
+    AccountIconOption("storefront", "门店卡", listOf("会员卡", "储值", "门店")),
+    AccountIconOption("savings", "储蓄", listOf("存款", "理财", "储蓄")),
+    AccountIconOption("add_card", "新增卡", listOf("虚拟卡", "备用卡")),
+    AccountIconOption("assessment", "投资", listOf("基金", "证券", "收益")),
+    AccountIconOption("business_center", "商务", listOf("工作", "报销", "公司"))
+)
+
+internal fun accountIconOptions(query: String = ""): List<Pair<String, String>> {
+    val trimmedQuery = query.trim()
+    val options = allAccountIconOptions()
+    val filtered = if (trimmedQuery.isBlank()) {
+        options
+    } else {
+        options.filter { option ->
+            option.name.contains(trimmedQuery, ignoreCase = true) ||
+                option.label.contains(trimmedQuery, ignoreCase = true) ||
+                option.keywords.any { keyword -> keyword.contains(trimmedQuery, ignoreCase = true) }
+        }
+    }
+    return filtered.map { it.name to it.label }
+}
+
+internal fun accountIconLabel(iconName: String): String {
+    return allAccountIconOptions()
+        .firstOrNull { it.name == iconName }
+        ?.label ?: "通用"
+}
+
+private data class CategoryIconGroup(
+    val title: String,
+    val options: List<CategoryIconOption>
+)
+
+private data class CategoryIconOption(
+    val name: String,
+    val label: String,
+    val keywords: List<String> = emptyList()
+)
+
 internal fun categoryIcon(iconName: String): ImageVector = when (iconName) {
     "restaurant" -> Icons.Default.Restaurant
+    "fastfood" -> Icons.Default.Fastfood
+    "local_cafe" -> Icons.Default.LocalCafe
     "commute" -> Icons.Default.Commute
     "directions_bus" -> Icons.Default.DirectionsBus
+    "train" -> Icons.Default.Train
+    "directions_car" -> Icons.Default.DirectionsCar
+    "local_gas_station" -> Icons.Default.LocalGasStation
     "shopping_bag" -> Icons.Default.ShoppingBag
+    "local_mall" -> Icons.Default.LocalMall
+    "local_grocery_store" -> Icons.Default.LocalGroceryStore
     "storefront" -> Icons.Default.Storefront
+    "home" -> Icons.Default.Home
+    "local_laundry_service" -> Icons.Default.LocalLaundryService
     "devices" -> Icons.Default.Devices
     "phone_iphone" -> Icons.Default.PhoneIphone
+    "movie" -> Icons.Default.Movie
+    "sports_esports" -> Icons.Default.SportsEsports
+    "fitness_center" -> Icons.Default.FitnessCenter
+    "flight_takeoff" -> Icons.Default.FlightTakeoff
+    "hotel" -> Icons.Default.Hotel
+    "school" -> Icons.Default.School
+    "menu_book" -> Icons.AutoMirrored.Filled.MenuBook
+    "local_hospital" -> Icons.Default.LocalHospital
+    "health_and_safety" -> Icons.Default.HealthAndSafety
+    "child_care" -> Icons.Default.ChildCare
     "receipt_long" -> Icons.AutoMirrored.Filled.ReceiptLong
     "credit_card" -> Icons.Default.CreditCard
     "payments" -> Icons.Default.Payments
     "wallet" -> Icons.Default.Wallet
-    "home" -> Icons.Default.Home
     "event_repeat" -> Icons.Default.EventRepeat
     "work" -> Icons.Default.Work
+    "business_center" -> Icons.Default.BusinessCenter
     "redeem" -> Icons.Default.Redeem
+    "card_giftcard" -> Icons.Default.CardGiftcard
     "add_card" -> Icons.Default.AddCard
     "assessment" -> Icons.Default.Assessment
+    "savings" -> Icons.Default.Savings
+    "monetization_on" -> Icons.Default.MonetizationOn
+    "attach_money" -> Icons.Default.AttachMoney
+    "local_shipping" -> Icons.Default.LocalShipping
     "history" -> Icons.Default.History
     else -> Icons.Default.Category
 }
@@ -1239,57 +1527,119 @@ internal fun categoryKindLabel(kind: CategoryKind): String = when (kind) {
     CategoryKind.INCOME -> "收入分类"
 }
 
-internal fun categoryIconOptions(kind: CategoryKind): List<String> = when (kind) {
-    CategoryKind.EXPENSE -> listOf(
-        "restaurant",
-        "commute",
-        "directions_bus",
-        "shopping_bag",
-        "storefront",
-        "devices",
-        "phone_iphone",
-        "receipt_long",
-        "credit_card",
-        "payments",
-        "wallet",
-        "home",
-        "event_repeat",
-        "category"
-    )
-    CategoryKind.INCOME -> listOf(
-        "work",
-        "redeem",
-        "add_card",
-        "payments",
-        "wallet",
-        "credit_card",
-        "assessment",
-        "storefront",
-        "history",
-        "category"
-    )
+internal fun categoryIconOptions(kind: CategoryKind): List<String> {
+    return categoryIconGroups(kind)
+        .flatMap { it.options }
+        .distinctBy { it.name }
+        .map { it.name }
 }
 
-internal fun categoryIconLabel(iconName: String): String = when (iconName) {
-    "restaurant" -> "餐饮"
-    "commute" -> "交通"
-    "directions_bus" -> "公交"
-    "shopping_bag" -> "购物"
-    "storefront" -> "门店"
-    "devices" -> "数码"
-    "phone_iphone" -> "手机"
-    "receipt_long" -> "账单"
-    "credit_card" -> "卡片"
-    "payments" -> "现金"
-    "wallet" -> "钱包"
-    "home" -> "居家"
-    "event_repeat" -> "周期"
-    "work" -> "工资"
-    "redeem" -> "优惠"
-    "add_card" -> "入账"
-    "assessment" -> "理财"
-    "history" -> "历史"
-    else -> "通用"
+internal fun categoryIconLabel(iconName: String): String {
+    return allCategoryIconOptions()
+        .firstOrNull { it.name == iconName }
+        ?.label ?: "通用"
+}
+
+private fun categoryIconGroups(kind: CategoryKind): List<CategoryIconGroup> {
+    val common = CategoryIconGroup(
+        title = "通用",
+        options = listOf(
+            iconOption("receipt_long", "账单", "账单", "票据", "水电", "缴费"),
+            iconOption("credit_card", "卡片", "卡片", "银行卡", "信用卡"),
+            iconOption("payments", "现金", "现金", "收款", "付款"),
+            iconOption("wallet", "钱包", "钱包", "余额"),
+            iconOption("event_repeat", "周期", "周期", "订阅", "固定"),
+            iconOption("category", "通用", "其他", "默认")
+        )
+    )
+    val expenseGroups = listOf(
+        CategoryIconGroup(
+            title = "餐饮日常",
+            options = listOf(
+                iconOption("restaurant", "餐饮", "吃饭", "饭店", "午饭", "晚饭"),
+                iconOption("fastfood", "快餐", "外卖", "零食", "快餐"),
+                iconOption("local_cafe", "咖啡", "奶茶", "饮品", "咖啡"),
+                iconOption("local_grocery_store", "买菜", "超市", "菜场", "食品")
+            )
+        ),
+        CategoryIconGroup(
+            title = "出行",
+            options = listOf(
+                iconOption("commute", "交通", "通勤", "打车", "出行"),
+                iconOption("directions_bus", "公交", "公交", "地铁"),
+                iconOption("train", "火车", "高铁", "铁路"),
+                iconOption("directions_car", "汽车", "开车", "停车"),
+                iconOption("local_gas_station", "加油", "油费", "充电")
+            )
+        ),
+        CategoryIconGroup(
+            title = "购物服务",
+            options = listOf(
+                iconOption("shopping_bag", "购物", "网购", "买东西"),
+                iconOption("local_mall", "商场", "服饰", "百货"),
+                iconOption("storefront", "门店", "线下", "店铺"),
+                iconOption("local_laundry_service", "洗护", "洗衣", "家政"),
+                iconOption("devices", "数码", "手机", "电脑", "软件"),
+                iconOption("phone_iphone", "手机", "通信", "话费")
+            )
+        ),
+        CategoryIconGroup(
+            title = "家庭健康",
+            options = listOf(
+                iconOption("home", "居家", "房租", "物业", "家庭"),
+                iconOption("local_hospital", "医疗", "医院", "药", "看病"),
+                iconOption("health_and_safety", "健康", "保险", "体检"),
+                iconOption("child_care", "育儿", "孩子", "教育支出")
+            )
+        ),
+        CategoryIconGroup(
+            title = "成长娱乐",
+            options = listOf(
+                iconOption("school", "教育", "课程", "学费"),
+                iconOption("menu_book", "书籍", "阅读", "学习"),
+                iconOption("movie", "娱乐", "电影", "会员"),
+                iconOption("sports_esports", "游戏", "娱乐", "游戏"),
+                iconOption("fitness_center", "运动", "健身", "锻炼"),
+                iconOption("flight_takeoff", "旅行", "机票", "旅游"),
+                iconOption("hotel", "住宿", "酒店", "民宿")
+            )
+        )
+    )
+    val incomeGroups = listOf(
+        CategoryIconGroup(
+            title = "收入",
+            options = listOf(
+                iconOption("work", "工资", "工资", "薪资", "工作"),
+                iconOption("business_center", "副业", "项目", "兼职", "外快"),
+                iconOption("redeem", "优惠", "返现", "红包", "赠送"),
+                iconOption("card_giftcard", "礼金", "礼物", "奖金"),
+                iconOption("add_card", "入账", "到账", "转入"),
+                iconOption("assessment", "理财", "基金", "收益"),
+                iconOption("savings", "储蓄", "存款", "利息"),
+                iconOption("monetization_on", "奖金", "提成", "补贴"),
+                iconOption("attach_money", "其他", "其他收入"),
+                iconOption("local_shipping", "报销", "物流", "差旅")
+            )
+        )
+    )
+    return when (kind) {
+        CategoryKind.EXPENSE -> expenseGroups + common
+        CategoryKind.INCOME -> incomeGroups + common
+    }
+}
+
+private fun allCategoryIconOptions(): List<CategoryIconOption> {
+    return (categoryIconGroups(CategoryKind.EXPENSE) + categoryIconGroups(CategoryKind.INCOME))
+        .flatMap { it.options }
+        .distinctBy { it.name }
+}
+
+private fun iconOption(
+    name: String,
+    label: String,
+    vararg keywords: String
+): CategoryIconOption {
+    return CategoryIconOption(name = name, label = label, keywords = keywords.toList())
 }
 
 internal fun categoryColorOptions(): List<Long> = listOf(
@@ -1363,7 +1713,24 @@ internal fun amountLabel(type: TransactionType, cents: Long): String {
     return prefix + Money(cents).format()
 }
 
-internal fun plainAmountLabel(type: TransactionType, cents: Long): String {
+internal fun privacyAmountLabel(cents: Long, hidden: Boolean): String {
+    return if (hidden) "¥ ****" else Money(cents).format()
+}
+
+internal fun privacyPlainAmountLabel(cents: Long, hidden: Boolean): String {
+    return if (hidden) "¥ ****" else Money(cents).formatPlain()
+}
+
+internal fun plainAmountLabel(type: TransactionType, cents: Long, hidden: Boolean = false): String {
+    if (hidden) {
+        val marker = "¥ ****"
+        return when (type) {
+            TransactionType.EXPENSE -> "-$marker"
+            TransactionType.INCOME -> "+$marker"
+            TransactionType.TRANSFER -> marker
+            TransactionType.BALANCE_ADJUSTMENT -> if (cents >= 0) "+$marker" else "-$marker"
+        }
+    }
     val plain = Money(cents).formatPlain()
     return when (type) {
         TransactionType.EXPENSE -> "-${plain.removePrefix("-")}"
