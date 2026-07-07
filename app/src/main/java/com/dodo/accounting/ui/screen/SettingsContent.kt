@@ -66,6 +66,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Commute
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DateRange
@@ -189,6 +190,7 @@ internal object MineRoute {
     const val Categories = "mine_categories"
     const val Budget = "mine_budget"
     const val Data = "mine_data"
+    const val WebDav = "mine_webdav"
     const val EntryPreferences = "mine_entry_preferences"
     const val Appearance = "mine_appearance"
     const val Trash = "mine_trash"
@@ -202,9 +204,12 @@ internal fun MineScreen(
     initialRoute: String? = null,
     onInitialRouteConsumed: () -> Unit = {},
     amountsHidden: Boolean = false,
-    onToggleAmountsHidden: () -> Unit = {},
     entryPreferences: EntryPreferences = EntryPreferences(),
-    onEntryPreferencesChange: (EntryPreferences) -> Unit = {}
+    onEntryPreferencesChange: (EntryPreferences) -> Unit = {},
+    themeMode: ThemeMode = ThemeMode.LIGHT,
+    onThemeModeChange: (ThemeMode) -> Unit = {},
+    webDavConfig: WebDavConfig = WebDavConfig(),
+    onWebDavConfigChange: (WebDavConfig) -> Unit = {}
 ) {
     val navController = rememberNavController()
 
@@ -230,8 +235,8 @@ internal fun MineScreen(
             MineMenu(
                 uiState = uiState,
                 amountsHidden = amountsHidden,
-                onToggleAmountsHidden = onToggleAmountsHidden,
                 entryPreferences = entryPreferences,
+                themeMode = themeMode,
                 onOpen = { route ->
                     navController.navigate(route) {
                         launchSingleTop = true
@@ -256,6 +261,15 @@ internal fun MineScreen(
         composable(MineRoute.Data) {
             DataManagementPage(uiState, viewModel, onBack = { navController.popBackStack() })
         }
+        composable(MineRoute.WebDav) {
+            WebDavBackupPage(
+                uiState = uiState,
+                viewModel = viewModel,
+                config = webDavConfig,
+                onConfigChange = onWebDavConfigChange,
+                onBack = { navController.popBackStack() }
+            )
+        }
         composable(MineRoute.EntryPreferences) {
             EntryPreferencesPage(
                 uiState = uiState,
@@ -266,8 +280,8 @@ internal fun MineScreen(
         }
         composable(MineRoute.Appearance) {
             AppearancePage(
-                amountsHidden = amountsHidden,
-                onToggleAmountsHidden = onToggleAmountsHidden,
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
                 onBack = { navController.popBackStack() }
             )
         }
@@ -284,8 +298,8 @@ internal fun MineScreen(
 internal fun MineMenu(
     uiState: AccountingUiState,
     amountsHidden: Boolean = false,
-    onToggleAmountsHidden: () -> Unit = {},
     entryPreferences: EntryPreferences = EntryPreferences(),
+    themeMode: ThemeMode = ThemeMode.LIGHT,
     onOpen: (String) -> Unit
 ) {
     val defaultAccountName = uiState.activeAccounts
@@ -297,14 +311,14 @@ internal fun MineMenu(
             title = "基础数据",
             entries = listOf(
                 SettingsMenuEntry("账户管理", "资产账户、信用卡和初始余额", Icons.Default.AccountBalanceWallet, MineRoute.Accounts),
-                SettingsMenuEntry("分类与标签", "分类图标、颜色和固定标签库", Icons.Default.Category, MineRoute.Categories)
+                SettingsMenuEntry("分类与标签", "分类图标、颜色和固定标签", Icons.Default.Category, MineRoute.Categories)
             )
         ),
         SettingsMenuGroup(
             title = "备份恢复",
             entries = listOf(
                 SettingsMenuEntry("导入导出", "JSON 完整备份，CSV 流水导出", Icons.Default.Download, MineRoute.Data),
-                SettingsMenuEntry("WebDAV 备份", "后续支持，不使用云账号", Icons.Default.Devices, null, "后续")
+                SettingsMenuEntry("WebDAV 备份", "上传或拉取 JSON 备份", Icons.Default.Devices, MineRoute.WebDav)
             )
         ),
         SettingsMenuGroup(
@@ -329,11 +343,11 @@ internal fun MineMenu(
             title = "外观",
             entries = listOf(
                 SettingsMenuEntry(
-                    title = "金额隐私",
-                    subtitle = "隐藏首页、统计、资产和回收站金额",
+                    title = "主题模式",
+                    subtitle = "浅色、深色或跟随系统",
                     icon = Icons.Default.PhoneIphone,
                     route = MineRoute.Appearance,
-                    badge = if (amountsHidden) "已隐藏" else "浅色"
+                    badge = themeMode.label
                 )
             )
         ),
@@ -409,7 +423,7 @@ private fun SettingsHeaderCard(uiState: AccountingUiState) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("设置", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
-                    "本地优先，不使用云账号",
+                        "本地优先，不使用云账户",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -465,7 +479,7 @@ private fun LocalDataOverviewCard(
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("本地数据", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "流水和基础数据保存在本机，导入导出从这里处理",
+                        "流水和基础数据保存在本机，导入导出从这里处理。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -499,7 +513,7 @@ private fun LocalDataOverviewCard(
 }
 
 @Composable
-private fun SettingsDataMetric(
+internal fun SettingsDataMetric(
     label: String,
     value: String,
     modifier: Modifier = Modifier
@@ -569,7 +583,7 @@ private fun SettingsTrustNote() {
         border = BorderStroke(1.dp, LedgerDivider)
     ) {
         Text(
-            "数据导入、覆盖恢复和危险操作会保留明确确认。WebDAV 作为后续备份能力，不引入账号系统。",
+            "数据导入、覆盖恢复和危险操作会保留明确确认。WebDAV 只保存连接信息，不引入额外账号系统。",
             modifier = Modifier.padding(14.dp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -680,7 +694,7 @@ internal fun EntryPreferencesPage(
         item {
             LedgerPanelSurface {
                 Text(
-                    "这些偏好只影响新建流水的默认值和推荐顺序，不会修改历史流水。后续接入备份配置时再做持久化。",
+                    "这些偏好只影响新建流水的默认值和推荐顺序，不会修改历史流水，并会保存在本机。",
                     modifier = Modifier.padding(14.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -704,7 +718,7 @@ internal fun EntryPreferencesPage(
                     }
                 )
                 EntryPreferenceSwitchRow(
-                    title = "默认时间为当前时间",
+                    title = "默认时间为当前时刻",
                     subtitle = "开启后每次新建都会使用当前时间",
                     checked = entryPreferences.useCurrentTime,
                     onCheckedChange = { checked ->
@@ -918,8 +932,8 @@ private fun EntryPreferenceSwitchRow(
 
 @Composable
 internal fun AppearancePage(
-    amountsHidden: Boolean,
-    onToggleAmountsHidden: () -> Unit,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
     onBack: () -> Unit
 ) {
     LazyColumn(
@@ -931,7 +945,7 @@ internal fun AppearancePage(
         item {
             LedgerPanelSurface {
                 Text(
-                    "第一版保持浅色模式和低饱和视觉风格；深色模式后续接入主题状态后再开放。",
+                    "主题模式会立即应用并保存到本机，可选择浅色、深色或跟随系统。",
                     modifier = Modifier.padding(14.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -940,61 +954,31 @@ internal fun AppearancePage(
         }
         item {
             LedgerCard {
-                SectionHeader("主题", "当前：浅色")
-                AppearanceStatusRow(
-                    title = "浅色模式",
-                    subtitle = "使用灰白背景、白色内容面和低饱和强调色",
-                    selected = true
-                )
-                AppearanceStatusRow(
-                    title = "深色模式",
-                    subtitle = "后续支持，不在当前版本展示假开关",
-                    selected = false
-                )
-            }
-        }
-        item {
-            LedgerCard {
-                SectionHeader("金额隐私", if (amountsHidden) "已隐藏" else "正常显示")
-                EntryPreferenceSwitchRow(
-                    title = "隐藏主金额",
-                    subtitle = "首页、统计、资产和回收站中的主要金额会显示为 •••",
-                    checked = amountsHidden,
-                    onCheckedChange = { onToggleAmountsHidden() }
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SettingsDataMetric(
-                        label = "显示效果",
-                        value = privacyAmountLabel(3268050, amountsHidden),
-                        modifier = Modifier.weight(1f)
-                    )
-                    SettingsDataMetric(
-                        label = "影响范围",
-                        value = "4 页",
-                        modifier = Modifier.weight(1f)
+                SectionHeader("主题", "当前：${themeMode.label}")
+                ThemeMode.entries.forEach { mode ->
+                    AppearanceStatusRow(
+                        title = mode.label,
+                        subtitle = mode.description,
+                        selected = themeMode == mode,
+                        onClick = { onThemeModeChange(mode) }
                     )
                 }
-                Text(
-                    "金额隐私只影响界面显示，不修改本地流水、统计结果或导出内容。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
         item {
             LedgerActionButton(
-                label = "恢复默认外观",
+                label = "恢复默认主题",
                 icon = Icons.Default.Restore,
                 onClick = {
-                    if (amountsHidden) {
-                        onToggleAmountsHidden()
+                    if (themeMode != ThemeMode.LIGHT) {
+                        onThemeModeChange(ThemeMode.LIGHT)
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
                 contentColor = MaterialTheme.colorScheme.onSurface,
                 borderColor = LedgerDivider,
-                enabled = amountsHidden
+                enabled = themeMode != ThemeMode.LIGHT
             )
         }
     }
@@ -1004,9 +988,10 @@ internal fun AppearancePage(
 private fun AppearanceStatusRow(
     title: String,
     subtitle: String,
-    selected: Boolean
+    selected: Boolean,
+    onClick: () -> Unit
 ) {
-    LedgerPanelSurface {
+    LedgerPanelSurface(onClick = onClick) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1036,10 +1021,24 @@ private fun AppearanceStatusRow(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            SettingsStatusPill(if (selected) "已启用" else "后续")
+            SettingsStatusPill(if (selected) "已启用" else "可选")
         }
     }
 }
+
+internal val ThemeMode.label: String
+    get() = when (this) {
+        ThemeMode.LIGHT -> "浅色"
+        ThemeMode.DARK -> "深色"
+        ThemeMode.SYSTEM -> "跟随系统"
+    }
+
+private val ThemeMode.description: String
+    get() = when (this) {
+        ThemeMode.LIGHT -> "使用灰白背景、白色内容面和低饱和强调色"
+        ThemeMode.DARK -> "使用深色背景、深色内容面和柔和强调色"
+        ThemeMode.SYSTEM -> "根据系统浅色或深色模式自动切换"
+    }
 
 @Composable
 internal fun AccountManagementPage(
@@ -1329,446 +1328,3 @@ internal fun BudgetSettingsPage(
     }
 }
 
-@Composable
-internal fun DataManagementPage(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
-    onBack: () -> Unit
-) {
-    val context = LocalContext.current
-    val jsonSaveLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
-        if (uri != null) {
-            context.contentResolver.openOutputStream(uri)?.use { output ->
-                output.write(uiState.exportContent.toByteArray(Charsets.UTF_8))
-            }
-            Toast.makeText(context, "JSON 已保存", Toast.LENGTH_SHORT).show()
-        }
-    }
-    val csvSaveLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/csv")
-    ) { uri ->
-        if (uri != null) {
-            context.contentResolver.openOutputStream(uri)?.use { output ->
-                output.write(uiState.exportContent.toByteArray(Charsets.UTF_8))
-            }
-            Toast.makeText(context, "CSV 已保存", Toast.LENGTH_SHORT).show()
-        }
-    }
-    val jsonImportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            val content = context.contentResolver.openInputStream(uri)?.use { input ->
-                input.bufferedReader(Charsets.UTF_8).readText()
-            }
-            if (content != null) {
-                viewModel.importJson(content)
-            }
-        }
-    }
-    val importPreview = uiState.pendingImportPreview
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item { MineBackHeader("数据导出", onBack) }
-        item {
-            LedgerCard {
-                    SectionHeader("备份", "JSON / CSV")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        LedgerActionButton(
-                            label = "生成 JSON",
-                            icon = Icons.Default.Download,
-                            onClick = { viewModel.export(ExportFormat.JSON) },
-                            modifier = Modifier.weight(1f)
-                        )
-                        LedgerActionButton(
-                            label = "生成 CSV",
-                            icon = Icons.Default.Download,
-                            onClick = { viewModel.export(ExportFormat.CSV) },
-                            modifier = Modifier.weight(1f),
-                            containerColor = LedgerMint,
-                            contentColor = MaterialTheme.colorScheme.primary,
-                            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-                        )
-                    }
-                    LedgerActionButton(
-                        label = "导入 JSON 备份",
-                        icon = Icons.Default.Upload,
-                        onClick = { jsonImportLauncher.launch(arrayOf("application/json", "text/*")) },
-                        modifier = Modifier.fillMaxWidth(),
-                        containerColor = LedgerMint,
-                        contentColor = MaterialTheme.colorScheme.primary,
-                        borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-                    )
-                    if (uiState.exportPreview.isNotBlank()) {
-                        LedgerActionButton(
-                            label = "保存到文件",
-                            icon = Icons.Default.Download,
-                            onClick = {
-                                when (uiState.exportFormat) {
-                                    ExportFormat.JSON -> jsonSaveLauncher.launch("accounting-backup.json")
-                                    ExportFormat.CSV -> csvSaveLauncher.launch("accounting-transactions.csv")
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            uiState.exportPreview,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 220.dp)
-                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                                .padding(10.dp)
-                                .verticalScroll(rememberScrollState()),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-            }
-        }
-    }
-
-    if (importPreview != null) {
-        val exportedAt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA)
-            .format(Date(importPreview.exportedAt))
-        AlertDialog(
-            onDismissRequest = { viewModel.cancelImportJson() },
-            title = {
-                Text("确认导入 JSON 备份")
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("导出时间：$exportedAt")
-                    Text("备份版本：${importPreview.schemaVersion}")
-                    Text("账户：${importPreview.accountCount} 个")
-                    Text("分类：${importPreview.categoryCount} 个")
-                    Text("标签：${importPreview.tagCount} 个")
-                    Text("流水：${importPreview.transactionCount} 条")
-                    Text("预算：${importPreview.budgetCount} 条")
-                    Text("周期规则：${importPreview.recurringRuleCount} 条")
-                    Text(
-                        "导入会替换当前全部本地数据，无法自动撤销。",
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { viewModel.confirmImportJson() }) {
-                    Text("确认导入", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.cancelImportJson() }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
-}
-
-@Composable
-internal fun DangerOperationsPage(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
-    onBack: () -> Unit
-) {
-    var clearTransactionsRequested by remember { mutableStateOf(false) }
-    var confirmText by remember { mutableStateOf("") }
-    val canConfirmClear = confirmText.trim() == "清空流水"
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item { MineBackHeader("危险操作", onBack) }
-        item {
-            LedgerPanelSurface {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        "这些操作会明显改变本地数据，请先确认已经导出备份。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        "第一版只提供可恢复的清空流水：所有未删除流水会移入回收站，不会立即永久删除。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-        item {
-            LedgerCard {
-                SectionHeader("清空所有流水", "移入回收站")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SettingsDataMetric(
-                        label = "近期流水",
-                        value = uiState.recentTransactions.size.toString(),
-                        modifier = Modifier.weight(1f)
-                    )
-                    SettingsDataMetric(
-                        label = "回收站",
-                        value = uiState.trash.size.toString(),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Text(
-                    "执行后首页、统计和资产余额会排除这些流水；可在回收站逐条恢复或彻底删除。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                LedgerActionButton(
-                    label = "清空所有流水",
-                    icon = Icons.Default.Delete,
-                    onClick = { clearTransactionsRequested = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
-                    contentColor = MaterialTheme.colorScheme.error,
-                    borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.24f),
-                    enabled = uiState.recentTransactions.isNotEmpty()
-                )
-            }
-        }
-    }
-
-    if (clearTransactionsRequested) {
-        AlertDialog(
-            onDismissRequest = {
-                clearTransactionsRequested = false
-                confirmText = ""
-            },
-            title = { Text("清空所有流水？") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("所有未删除流水会移入回收站，并从首页、统计和资产余额中移除。")
-                    Text(
-                        "如需继续，请输入：清空流水",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    MinimalInputLine(
-                        value = confirmText,
-                        onValueChange = { confirmText = it },
-                        placeholder = "输入确认文字",
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = canConfirmClear,
-                    onClick = {
-                        viewModel.moveAllTransactionsToTrash()
-                        clearTransactionsRequested = false
-                        confirmText = ""
-                    }
-                ) {
-                    Text("移入回收站", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        clearTransactionsRequested = false
-                        confirmText = ""
-                    }
-                ) {
-                    Text("取消")
-                }
-            }
-        )
-    }
-}
-
-@Composable
-internal fun TrashPage(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
-    onBack: () -> Unit,
-    amountsHidden: Boolean = false
-) {
-    var permanentDeleteTarget by remember { mutableStateOf<TransactionWithDetails?>(null) }
-    var clearTrashRequested by remember { mutableStateOf(false) }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item { MineBackHeader("回收站", onBack) }
-        item {
-            LedgerPanelSurface {
-                Text(
-                    "删除的流水不参与首页、统计和资产余额。恢复后会回到原来的时间、分类、账户和标签。",
-                    modifier = Modifier.padding(14.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        item { SectionHeader("已删除流水", "${uiState.trash.size} 条") }
-        if (uiState.trash.isNotEmpty()) {
-            item {
-                LedgerActionButton(
-                    label = "清空回收站",
-                    icon = Icons.Default.Delete,
-                    onClick = { clearTrashRequested = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
-                    contentColor = MaterialTheme.colorScheme.error,
-                    borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.24f)
-                )
-            }
-        }
-        items(uiState.trash, key = { it.transaction.id }) { transaction ->
-            LedgerCard {
-                TransactionRow(
-                    item = transaction,
-                    amountsHidden = amountsHidden,
-                    trailing = {
-                        Row {
-                            IconButton(onClick = { viewModel.restoreTransaction(transaction.transaction.id) }) {
-                                Icon(Icons.Default.Restore, contentDescription = "恢复")
-                            }
-                            IconButton(onClick = { permanentDeleteTarget = transaction }) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = "彻底删除",
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            }
-                        }
-                    }
-                )
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.64f),
-                    border = BorderStroke(1.dp, LedgerDivider)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Text(
-                            "删除时间：${settingsDateTimeLabel(transaction.transaction.deletedAt)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            "原流水时间：${settingsDateTimeLabel(transaction.transaction.occurredAt)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-        item {
-            if (uiState.trash.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 42.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Restore,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.54f),
-                            modifier = Modifier.size(56.dp)
-                        )
-                        Text(
-                            "回收站是空的",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    permanentDeleteTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { permanentDeleteTarget = null },
-            title = { Text("彻底删除这条流水？") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("彻底删除后无法从回收站恢复。")
-                    Text(
-                        "原流水时间：${settingsDateTimeLabel(target.transaction.occurredAt)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        "金额：${privacyAmountLabel(target.transaction.amountCents, amountsHidden)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.permanentlyDeleteTransaction(target.transaction.id)
-                        permanentDeleteTarget = null
-                    }
-                ) {
-                    Text("彻底删除", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { permanentDeleteTarget = null }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
-    if (clearTrashRequested) {
-        AlertDialog(
-            onDismissRequest = { clearTrashRequested = false },
-            title = { Text("清空回收站？") },
-            text = {
-                Text("将彻底删除回收站中的 ${uiState.trash.size} 条流水，删除后无法恢复。")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.clearTrash()
-                        clearTrashRequested = false
-                    }
-                ) {
-                    Text("清空", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { clearTrashRequested = false }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
-}
-
-private fun settingsDateTimeLabel(millis: Long?): String {
-    return if (millis == null) {
-        "--"
-    } else {
-        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(Date(millis))
-    }
-}

@@ -12,6 +12,7 @@ import com.dodo.accounting.data.local.entity.TransactionType
 import com.dodo.accounting.data.local.model.CategorySummaryRow
 import com.dodo.accounting.data.local.model.PeriodSummaryRow
 import com.dodo.accounting.data.local.model.TransactionWithDetails
+import com.dodo.accounting.data.local.model.TrendSummaryRow
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -30,6 +31,9 @@ interface TransactionDao {
         """
     )
     fun observeRecent(limit: Int = 50): Flow<List<TransactionWithDetails>>
+
+    @Query("SELECT COUNT(*) FROM transactions WHERE deletedAt IS NULL")
+    fun observeActiveCount(): Flow<Int>
 
     @Transaction
     @Query(
@@ -54,7 +58,7 @@ interface TransactionDao {
             AND (:startAt IS NULL OR transactions.occurredAt >= :startAt)
             AND (:endAt IS NULL OR transactions.occurredAt < :endAt)
         ORDER BY transactions.occurredAt DESC, transactions.createdAt DESC
-        LIMIT :limit
+        LIMIT :limit OFFSET :offset
         """
     )
     fun search(
@@ -63,7 +67,8 @@ interface TransactionDao {
         accountId: Long?,
         startAt: Long?,
         endAt: Long?,
-        limit: Int = 200
+        limit: Int = 200,
+        offset: Int = 0
     ): Flow<List<TransactionWithDetails>>
 
     @Transaction
@@ -104,6 +109,24 @@ interface TransactionDao {
         """
     )
     fun observeExpenseByCategory(startAt: Long, endAt: Long): Flow<List<CategorySummaryRow>>
+
+    @Query(
+        """
+        SELECT
+            strftime('%Y-%m', transactions.occurredAt / 1000, 'unixepoch', 'localtime') AS bucketMonth,
+            COALESCE(SUM(CASE WHEN type = 'EXPENSE' THEN amountCents ELSE 0 END), 0) AS expenseCents,
+            COALESCE(SUM(CASE WHEN type = 'INCOME' THEN amountCents ELSE 0 END), 0) AS incomeCents,
+            COUNT(*) AS count
+        FROM transactions
+        WHERE deletedAt IS NULL
+            AND type IN ('EXPENSE', 'INCOME')
+            AND occurredAt >= :startAt
+            AND occurredAt < :endAt
+        GROUP BY bucketMonth
+        ORDER BY bucketMonth ASC
+        """
+    )
+    fun observeMonthlyTrend(startAt: Long, endAt: Long): Flow<List<TrendSummaryRow>>
 
     @Query(
         """

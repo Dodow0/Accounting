@@ -13,6 +13,7 @@ import com.dodo.accounting.data.local.entity.TransactionType
 import com.dodo.accounting.data.local.model.AccountBalanceRow
 import com.dodo.accounting.data.local.model.CategorySummaryRow
 import com.dodo.accounting.data.local.model.TransactionWithDetails
+import com.dodo.accounting.data.local.model.TrendSummaryRow
 import com.dodo.accounting.domain.model.AccountingSummary
 import com.dodo.accounting.domain.model.BackupPreview
 import com.dodo.accounting.domain.model.DateRange
@@ -45,6 +46,7 @@ data class AccountingUiState(
     val categories: List<CategoryEntity> = emptyList(),
     val tags: List<TagEntity> = emptyList(),
     val recentTransactions: List<TransactionWithDetails> = emptyList(),
+    val activeTransactionCount: Int = 0,
     val searchResults: List<TransactionWithDetails> = emptyList(),
     val trash: List<TransactionWithDetails> = emptyList(),
     val summary: AccountingSummary? = null,
@@ -59,7 +61,7 @@ data class AccountingUiState(
     val homeRangeEndMillis: Long = addMonthsMillis(startOfMonthMillis(System.currentTimeMillis()), 1),
     val calendarMonthTransactions: List<TransactionWithDetails> = emptyList(),
     val periodTransactions: List<TransactionWithDetails> = emptyList(),
-    val trendTransactions: List<TransactionWithDetails> = emptyList(),
+    val trendBuckets: List<TrendSummaryRow> = emptyList(),
     val calendarMonthStartMillis: Long = startOfMonthMillis(System.currentTimeMillis()),
     val calendarSelectedDateMillis: Long = startOfDayMillis(System.currentTimeMillis()),
     val statsAnchorMillis: Long = startOfDayMillis(System.currentTimeMillis()),
@@ -294,31 +296,29 @@ class AccountingViewModel @Inject constructor(
         )
     }
 
-    private val trendTransactionsFlow = trendDataEnabled.flatMapLatest { enabled ->
+    private val trendBucketsFlow = trendDataEnabled.flatMapLatest { enabled ->
         if (!enabled) {
             flowOf(emptyList())
         } else {
             val trendMonthStart = startOfMonthMillis(System.currentTimeMillis())
-            repository.searchTransactions(
-                query = "",
+            repository.observeMonthlyTrend(
                 startAt = addMonthsMillis(trendMonthStart, -5),
-                endAt = addMonthsMillis(trendMonthStart, 1),
-                limit = 5_000
+                endAt = addMonthsMillis(trendMonthStart, 1)
             )
         }
     }
 
     private val transactionBuckets = combine(
         periodTransactionsFlow,
-        trendTransactionsFlow
-    ) { periodTransactions, trendTransactions ->
+        trendBucketsFlow
+    ) { periodTransactions, trendBuckets ->
         TransactionBuckets(
             periodTransactions = periodTransactions,
-            trendTransactions = trendTransactions
+            trendBuckets = trendBuckets
         )
     }
 
-    private val dataState = combine(
+    private val baseDataState = combine(
         repository.observeAccountBalances(),
         repository.observeActiveAccounts(),
         repository.observeCategories(),
@@ -332,6 +332,13 @@ class AccountingViewModel @Inject constructor(
             tags = tags,
             recentTransactions = recentTransactions
         )
+    }
+
+    private val dataState = combine(
+        baseDataState,
+        repository.observeActiveTransactionCount()
+    ) { data, activeTransactionCount ->
+        data.copy(activeTransactionCount = activeTransactionCount)
     }
 
     private val planningState = combine(
@@ -375,7 +382,7 @@ class AccountingViewModel @Inject constructor(
             monthlyExpenseByCategory = categoryExpense.monthlyExpenseByCategory,
             entryMonthExpenseByCategory = categoryExpense.entryMonthExpenseByCategory,
             periodTransactions = buckets.periodTransactions,
-            trendTransactions = buckets.trendTransactions
+            trendBuckets = buckets.trendBuckets
         )
     }
 
@@ -412,6 +419,7 @@ class AccountingViewModel @Inject constructor(
             categories = data.categories,
             tags = data.tags,
             recentTransactions = data.recentTransactions,
+            activeTransactionCount = data.activeTransactionCount,
             searchResults = searchResults,
             trash = trash,
             summary = summary,
@@ -426,7 +434,7 @@ class AccountingViewModel @Inject constructor(
             homeRangeEndMillis = data.homeRangeEndMillis,
             calendarMonthTransactions = data.calendarMonthTransactions,
             periodTransactions = data.periodTransactions,
-            trendTransactions = data.trendTransactions,
+            trendBuckets = data.trendBuckets,
             selectedPeriod = filters.period,
             statsAnchorMillis = filters.statsAnchorMillis,
             statsRangeMode = filters.statsRangeMode,
@@ -563,6 +571,13 @@ class AccountingViewModel @Inject constructor(
                     endMillis = addDaysMillis(range.endMillis, days * delta)
                 )
             }
+        }
+    }
+
+    fun resetHomePeriodToCurrent() {
+        homeAnchorMillis.value = startOfDayMillis(System.currentTimeMillis())
+        if (homePeriod.value == HomePeriod.CUSTOM) {
+            homeCustomRange.value = defaultHomeCustomRange()
         }
     }
 
@@ -818,6 +833,8 @@ class AccountingViewModel @Inject constructor(
 
     fun export(format: ExportFormat) = backupActions.export(format)
 
+    suspend fun exportJsonContent(): Result<String> = runCatching { exportBackup.json() }
+
     fun importJson(content: String) = backupActions.previewImportJson(content)
 
     fun confirmImportJson() = backupActions.confirmImportJson()
@@ -844,6 +861,7 @@ class AccountingViewModel @Inject constructor(
         val categories: List<CategoryEntity>,
         val tags: List<TagEntity>,
         val recentTransactions: List<TransactionWithDetails>,
+        val activeTransactionCount: Int = 0,
         val monthlyBudget: BudgetEntity? = null,
         val categoryBudgets: List<BudgetEntity> = emptyList(),
         val recurringRules: List<RecurringRuleEntity> = emptyList(),
@@ -855,12 +873,12 @@ class AccountingViewModel @Inject constructor(
         val homeRangeEndMillis: Long = addMonthsMillis(startOfMonthMillis(System.currentTimeMillis()), 1),
         val calendarMonthTransactions: List<TransactionWithDetails> = emptyList(),
         val periodTransactions: List<TransactionWithDetails> = emptyList(),
-        val trendTransactions: List<TransactionWithDetails> = emptyList()
+        val trendBuckets: List<TrendSummaryRow> = emptyList()
     )
 
     private data class TransactionBuckets(
         val periodTransactions: List<TransactionWithDetails>,
-        val trendTransactions: List<TransactionWithDetails>
+        val trendBuckets: List<TrendSummaryRow>
     )
 
     private data class PlanningState(

@@ -19,6 +19,7 @@ import com.dodo.accounting.data.local.model.AccountBalanceRow
 import com.dodo.accounting.data.local.model.CategorySummaryRow
 import com.dodo.accounting.data.local.model.PeriodSummaryRow
 import com.dodo.accounting.data.local.model.TransactionWithDetails
+import com.dodo.accounting.data.local.model.TrendSummaryRow
 import com.dodo.accounting.domain.model.AccountRemovalAction
 import com.dodo.accounting.domain.model.AccountRemovalResult
 import com.dodo.accounting.domain.model.BackupPreview
@@ -52,14 +53,16 @@ class AccountingRepositoryImpl @Inject constructor(
     override fun observeCategories(kind: CategoryKind): Flow<List<CategoryEntity>> = categoryDao.observeCategories(kind)
     override fun observeTags(): Flow<List<TagEntity>> = tagDao.observeTags()
     override fun observeRecentTransactions(limit: Int): Flow<List<TransactionWithDetails>> = transactionDao.observeRecent(limit)
+    override fun observeActiveTransactionCount(): Flow<Int> = transactionDao.observeActiveCount()
     override fun searchTransactions(
         query: String,
         type: TransactionType?,
         accountId: Long?,
         startAt: Long?,
         endAt: Long?,
-        limit: Int
-    ): Flow<List<TransactionWithDetails>> = transactionDao.search(query, type, accountId, startAt, endAt, limit)
+        limit: Int,
+        offset: Int
+    ): Flow<List<TransactionWithDetails>> = transactionDao.search(query, type, accountId, startAt, endAt, limit, offset)
 
     override fun observeTrash(limit: Int): Flow<List<TransactionWithDetails>> = transactionDao.observeTrash(limit)
     override fun observePeriodSummary(startAt: Long, endAt: Long): Flow<PeriodSummaryRow> =
@@ -67,6 +70,9 @@ class AccountingRepositoryImpl @Inject constructor(
 
     override fun observeExpenseByCategory(startAt: Long, endAt: Long): Flow<List<CategorySummaryRow>> =
         transactionDao.observeExpenseByCategory(startAt, endAt)
+
+    override fun observeMonthlyTrend(startAt: Long, endAt: Long): Flow<List<TrendSummaryRow>> =
+        transactionDao.observeMonthlyTrend(startAt, endAt)
 
     override fun observeActiveBudgets(): Flow<List<BudgetEntity>> =
         budgetDao.observeActiveBudgets()

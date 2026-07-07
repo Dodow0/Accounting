@@ -12,6 +12,7 @@ import com.dodo.accounting.data.local.model.AccountBalanceRow
 import com.dodo.accounting.data.local.model.CategorySummaryRow
 import com.dodo.accounting.data.local.model.PeriodSummaryRow
 import com.dodo.accounting.data.local.model.TransactionWithDetails
+import com.dodo.accounting.data.local.model.TrendSummaryRow
 import com.dodo.accounting.domain.model.AccountRemovalResult
 import com.dodo.accounting.domain.model.BackupPreview
 import com.dodo.accounting.domain.model.RecurringGenerationResult
@@ -26,17 +27,20 @@ interface AccountingRepository {
     fun observeCategories(kind: CategoryKind): Flow<List<CategoryEntity>>
     fun observeTags(): Flow<List<TagEntity>>
     fun observeRecentTransactions(limit: Int = 50): Flow<List<TransactionWithDetails>>
+    fun observeActiveTransactionCount(): Flow<Int>
     fun searchTransactions(
         query: String,
         type: TransactionType? = null,
         accountId: Long? = null,
         startAt: Long? = null,
         endAt: Long? = null,
-        limit: Int = 200
+        limit: Int = 200,
+        offset: Int = 0
     ): Flow<List<TransactionWithDetails>>
     fun observeTrash(limit: Int = 100): Flow<List<TransactionWithDetails>>
     fun observePeriodSummary(startAt: Long, endAt: Long): Flow<PeriodSummaryRow>
     fun observeExpenseByCategory(startAt: Long, endAt: Long): Flow<List<CategorySummaryRow>>
+    fun observeMonthlyTrend(startAt: Long, endAt: Long): Flow<List<TrendSummaryRow>>
     fun observeActiveBudgets(): Flow<List<BudgetEntity>>
     fun observeMonthlyBudget(): Flow<BudgetEntity?>
     fun observeRecurringRules(): Flow<List<RecurringRuleEntity>>

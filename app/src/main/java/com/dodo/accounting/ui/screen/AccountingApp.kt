@@ -164,8 +164,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalViewConfiguration
-import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
@@ -203,29 +202,29 @@ import com.dodo.accounting.ui.viewmodel.ExportFormat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import java.math.BigDecimal
 import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
-import java.util.Calendar
 import java.util.Date
 
 internal val LedgerMint: Color
-    @Composable get() = colorResource(R.color.ledger_mint)
+    @Composable get() = MaterialTheme.colorScheme.primaryContainer
 
 internal val LedgerPanel: Color
-    @Composable get() = colorResource(R.color.ledger_panel)
+    @Composable get() = MaterialTheme.colorScheme.surfaceVariant
 
 internal val LedgerDivider: Color
-    @Composable get() = colorResource(R.color.ledger_divider)
+    @Composable get() = MaterialTheme.colorScheme.outlineVariant
 
 internal val LedgerExpensePink: Color
-    @Composable get() = colorResource(R.color.ledger_expense_pink)
+    @Composable get() = MaterialTheme.colorScheme.error
 
 internal val LedgerCardShape = RoundedCornerShape(20.dp)
+
+private const val VOICE_RECOGNITION_MAX_DURATION_MS = 20_000L
 
 @Composable
 internal fun LedgerCard(
@@ -267,8 +266,13 @@ internal fun LedgerPanelSurface(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountingApp(
-    viewModel: AccountingViewModel = hiltViewModel()
+    viewModel: AccountingViewModel = hiltViewModel(),
+    themeMode: ThemeMode = ThemeMode.LIGHT,
+    onThemeModeChange: (ThemeMode) -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val preferenceStore = remember(context) { UiPreferenceStore(context) }
+    val storedPreferences = remember(preferenceStore) { preferenceStore.load() }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -286,10 +290,14 @@ fun AccountingApp(
     var voiceSheetOpen by remember { mutableStateOf(false) }
     var pendingSettingsRoute by remember { mutableStateOf<String?>(null) }
     var pendingEntryPrefillDraft by remember { mutableStateOf<EntryPrefillDraft?>(null) }
+    var pendingVoiceDraftQueue by remember { mutableStateOf<List<EntryPrefillDraft>>(emptyList()) }
+    var openEntryAfterVoiceDismiss by remember { mutableStateOf(false) }
     var pendingStatsAccountFilterId by remember { mutableStateOf<Long?>(null) }
+    var pendingStatsViewMode by remember { mutableStateOf<StatsInitialViewMode?>(null) }
     var entryDismissRequestSignal by remember { mutableIntStateOf(0) }
-    var amountsHidden by remember { mutableStateOf(false) }
-    var entryPreferences by remember { mutableStateOf(EntryPreferences()) }
+    var amountsHidden by remember { mutableStateOf(storedPreferences.amountsHidden) }
+    var entryPreferences by remember { mutableStateOf(storedPreferences.entryPreferences) }
+    var webDavConfig by remember { mutableStateOf(storedPreferences.webDavConfig) }
     val entrySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -304,6 +312,16 @@ fun AccountingApp(
 
     LaunchedEffect(selectedTab) {
         viewModel.setTrendDataEnabled(selectedTab == AppTab.Stats)
+    }
+
+    LaunchedEffect(voiceSheetOpen, openEntryAfterVoiceDismiss) {
+        if (!voiceSheetOpen && openEntryAfterVoiceDismiss) {
+            delay(260)
+            entrySheetOpen = true
+            delay(50)
+            entrySheetState.show()
+            openEntryAfterVoiceDismiss = false
+        }
     }
 
     val openManualEntry: () -> Unit = {
@@ -386,7 +404,16 @@ fun AccountingApp(
                             uiState = uiState,
                             viewModel = viewModel,
                             onEditTransaction = openEditor,
-                            onOpenSearch = {},
+                            onOpenSearch = {
+                                pendingStatsViewMode = StatsInitialViewMode.Flow
+                                navController.navigate(AppTab.Stats.route) {
+                                    launchSingleTop = true
+                                    restoreState = true
+                                    popUpTo(AppTab.Home.route) {
+                                        saveState = true
+                                    }
+                                }
+                            },
                             amountsHidden = amountsHidden
                         )
                     }
@@ -397,21 +424,18 @@ fun AccountingApp(
                             onEditTransaction = openEditor,
                             amountsHidden = amountsHidden,
                             initialAccountFilterId = pendingStatsAccountFilterId,
-                            onInitialAccountFilterConsumed = { pendingStatsAccountFilterId = null }
+                            onInitialAccountFilterConsumed = { pendingStatsAccountFilterId = null },
+                            initialViewMode = pendingStatsViewMode,
+                            onInitialViewModeConsumed = { pendingStatsViewMode = null }
                         )
                     }
                     composable(AppTab.Assets.route) {
                         AssetsScreen(
                             uiState = uiState,
-                            viewModel = viewModel,
-                            onEditTransaction = openEditor,
                             amountsHidden = amountsHidden,
-                            onToggleAmountsHidden = { amountsHidden = !amountsHidden },
-                            onCreateTransaction = { draft ->
-                                viewModel.cancelEditTransaction()
-                                pendingEntryPrefillDraft = draft
-                                entrySheetOpen = true
-                                scope.launch { entrySheetState.show() }
+                            onToggleAmountsHidden = {
+                                amountsHidden = !amountsHidden
+                                preferenceStore.saveAmountsHidden(amountsHidden)
                             },
                             onOpenAccountManagement = {
                                 pendingSettingsRoute = MineRoute.Accounts
@@ -422,6 +446,12 @@ fun AccountingApp(
                                         saveState = true
                                     }
                                 }
+                            },
+                            onCreateTransfer = {
+                                viewModel.cancelEditTransaction()
+                                pendingEntryPrefillDraft = EntryPrefillDraft(type = TransactionType.TRANSFER)
+                                entrySheetOpen = true
+                                scope.launch { entrySheetState.show() }
                             },
                             onOpenAccountFlow = { accountId ->
                                 pendingStatsAccountFilterId = accountId
@@ -442,9 +472,18 @@ fun AccountingApp(
                             initialRoute = pendingSettingsRoute,
                             onInitialRouteConsumed = { pendingSettingsRoute = null },
                             amountsHidden = amountsHidden,
-                            onToggleAmountsHidden = { amountsHidden = !amountsHidden },
                             entryPreferences = entryPreferences,
-                            onEntryPreferencesChange = { entryPreferences = it }
+                            onEntryPreferencesChange = {
+                                entryPreferences = it
+                                preferenceStore.saveEntryPreferences(it)
+                            },
+                            themeMode = themeMode,
+                            onThemeModeChange = onThemeModeChange,
+                            webDavConfig = webDavConfig,
+                            onWebDavConfigChange = {
+                                webDavConfig = it
+                                preferenceStore.saveWebDavConfig(it)
+                            }
                         )
                     }
                 }
@@ -467,9 +506,18 @@ fun AccountingApp(
                     entryPreferences = entryPreferences,
                     dismissRequestSignal = entryDismissRequestSignal,
                     onPrefillConsumed = { pendingEntryPrefillDraft = null },
-                    onDone = {
-                        entrySheetOpen = false
+                    onDone = { saved ->
                         viewModel.cancelEditTransaction()
+                        val nextDraft = if (saved) pendingVoiceDraftQueue.firstOrNull() else null
+                        if (nextDraft != null) {
+                            pendingVoiceDraftQueue = pendingVoiceDraftQueue.drop(1)
+                            pendingEntryPrefillDraft = nextDraft
+                            entrySheetOpen = true
+                            scope.launch { entrySheetState.show() }
+                        } else {
+                            if (!saved) pendingVoiceDraftQueue = emptyList()
+                            entrySheetOpen = false
+                        }
                     }
                 )
             }
@@ -484,19 +532,15 @@ fun AccountingApp(
                 VoiceEntrySheet(
                     uiState = uiState,
                     onDismiss = { voiceSheetOpen = false },
-                    onUseManualEntry = {
-                        voiceSheetOpen = false
-                        pendingEntryPrefillDraft = null
-                        viewModel.cancelEditTransaction()
-                        entrySheetOpen = true
-                        scope.launch { entrySheetState.show() }
-                    },
-                    onRecognizedDraft = { draft ->
-                        voiceSheetOpen = false
-                        viewModel.cancelEditTransaction()
-                        pendingEntryPrefillDraft = draft
-                        entrySheetOpen = true
-                        scope.launch { entrySheetState.show() }
+                    onRecognizedDrafts = { drafts ->
+                        val firstDraft = drafts.firstOrNull()
+                        if (firstDraft != null) {
+                            viewModel.cancelEditTransaction()
+                            pendingVoiceDraftQueue = drafts.drop(1)
+                            pendingEntryPrefillDraft = firstDraft
+                            openEntryAfterVoiceDismiss = true
+                            voiceSheetOpen = false
+                        }
                     }
                 )
             }
@@ -593,20 +637,21 @@ internal fun HomeFloatingEntryButtons(
 internal fun VoiceEntrySheet(
     uiState: AccountingUiState,
     onDismiss: () -> Unit,
-    onUseManualEntry: () -> Unit,
-    onRecognizedDraft: (EntryPrefillDraft) -> Unit
+    onRecognizedDrafts: (List<EntryPrefillDraft>) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val viewConfiguration = LocalViewConfiguration.current
     var recognizedText by remember { mutableStateOf("") }
     var statusText by remember { mutableStateOf("等待语音转文字") }
     var errorText by remember { mutableStateOf<String?>(null) }
     var isListening by remember { mutableStateOf(false) }
     var voiceLevel by remember { mutableFloatStateOf(0f) }
+    var continuousMode by remember { mutableStateOf(false) }
+    var voiceResults by remember { mutableStateOf<List<VoiceEntryParseResult>>(emptyList()) }
     var hasMicPermission by remember { mutableStateOf(hasRecordAudioPermission(context)) }
     var showSpeechServicePermissionGuide by remember { mutableStateOf(false) }
     val speechServicePackage = remember(context) { defaultSpeechRecognitionServicePackage(context) }
     val canQuerySpeechService = remember(context) { SpeechRecognizer.isRecognitionAvailable(context) }
+    val voiceEntryParser = remember { VoiceEntryParser() }
     val speechRecognizer = remember(context) {
         runCatching { SpeechRecognizer.createSpeechRecognizer(context) }.getOrNull()
     }
@@ -620,32 +665,35 @@ internal fun VoiceEntrySheet(
         animationSpec = tween(durationMillis = 160),
         label = "voiceGlowAlpha"
     )
-    val voiceGuideExamples = remember(uiState.activeAccounts) { voiceGuideExamples(uiState) }
-    val previewDraft = remember(
-        recognizedText,
-        uiState.activeAccounts,
-        uiState.incomeCategories,
-        uiState.expenseCategories,
-        uiState.tags
-    ) {
-        recognizedText.trim()
-            .takeIf { it.isNotBlank() }
-            ?.toEntryPrefillDraft(uiState)
+    val voiceGuideExamples = remember(uiState.activeAccounts, uiState.recentTransactions) {
+        voiceEntryParser.guideExamples(uiState)
+    }
+    fun parseRecognizedText(text: String): List<VoiceEntryParseResult> {
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return emptyList()
+        return if (continuousMode) {
+            voiceEntryParser.parseMany(trimmed, uiState)
+        } else {
+            listOf(voiceEntryParser.parseDetailed(trimmed, uiState))
+        }
     }
 
-    fun createDraftFromText() {
+    fun submitResults(results: List<VoiceEntryParseResult>) {
         val text = recognizedText.trim()
-        if (text.isBlank()) {
+        if (text.isBlank() && results.isEmpty()) {
             errorText = "请先完成语音转文字"
             return
         }
-        val draft = text.toEntryPrefillDraft(uiState)
-        if (draft.amount.isBlank()) {
-            errorText = "没有识别到金额，可以补充文字，比如“午饭花了28”"
+        val sourceResults = results.ifEmpty { parseRecognizedText(text) }
+        val usableDrafts = sourceResults
+            .let { if (continuousMode) it else it.take(1) }
+            .map { it.draft }
+        if (usableDrafts.isEmpty()) {
+            errorText = "请先完成语音转文字"
             return
         }
         errorText = null
-        onRecognizedDraft(draft)
+        onRecognizedDrafts(usableDrafts)
     }
 
     fun startListening(permissionGranted: Boolean = hasRecordAudioPermission(context)) {
@@ -674,11 +722,11 @@ internal fun VoiceEntrySheet(
         }
     }
 
-    fun stopListening() {
+    fun stopListening(nextStatus: String = "正在整理文字...") {
         speechRecognizer?.stopListening()
         isListening = false
         voiceLevel = 0f
-        statusText = "正在整理文字..."
+        statusText = nextStatus
     }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
@@ -694,6 +742,26 @@ internal fun VoiceEntrySheet(
             statusText = "需要麦克风权限"
             errorText = "语音转文字需要麦克风权限；你也可以先手动输入文字。"
         }
+    }
+
+    fun requestStartListening(): Boolean {
+        if (speechRecognizer == null) {
+            statusText = "语音转文字不可用"
+            errorText = "当前设备没有可用的系统语音识别服务"
+            return false
+        }
+        val permissionGranted = hasRecordAudioPermission(context)
+        hasMicPermission = permissionGranted
+        if (!permissionGranted) {
+            statusText = "需要麦克风权限"
+            errorText = "请允许麦克风权限后，重新开始语音转文字。"
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return false
+        }
+        recognizedText = ""
+        if (!continuousMode) voiceResults = emptyList()
+        startListening(permissionGranted = true)
+        return true
     }
 
     androidx.compose.runtime.DisposableEffect(speechRecognizer) {
@@ -745,8 +813,12 @@ internal fun VoiceEntrySheet(
                     errorText = "没有听清楚，再试一次，或先手动输入文字。"
                 } else {
                     recognizedText = text
+                    val parsed = parseRecognizedText(text)
+                    val nextResults = if (continuousMode) voiceResults + parsed else parsed
+                    voiceResults = nextResults
                     statusText = "已转成文字"
                     errorText = null
+                    submitResults(nextResults)
                 }
             }
 
@@ -757,6 +829,9 @@ internal fun VoiceEntrySheet(
                     .orEmpty()
                 if (text.isNotBlank()) {
                     recognizedText = text
+                    if (!continuousMode) {
+                        voiceResults = parseRecognizedText(text)
+                    }
                     statusText = "正在转文字..."
                     errorText = null
                 }
@@ -799,37 +874,23 @@ internal fun VoiceEntrySheet(
             Surface(
                 modifier = Modifier
                     .size(56.dp)
-                    .pointerInput(speechRecognizer, hasMicPermission) {
+                    .pointerInput(speechRecognizer, hasMicPermission, continuousMode) {
                         if (speechRecognizer == null) return@pointerInput
                         awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
-                            val releasedBeforeLongPress = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-                                var released = false
-                                while (!released) {
+                            awaitFirstDown(requireUnconsumed = false)
+                            val started = requestStartListening()
+                            if (!started) return@awaitEachGesture
+                            val releasedBeforeTimeout = withTimeoutOrNull(VOICE_RECOGNITION_MAX_DURATION_MS) {
+                                do {
                                     val event = awaitPointerEvent()
-                                    if (event.changes.none { it.id == down.id && it.pressed }) {
-                                        released = true
-                                    }
-                                }
-                                released
+                                    val stillPressed = event.changes.any { it.pressed }
+                                } while (stillPressed)
+                                true
                             } ?: false
-                            if (!releasedBeforeLongPress) {
-                                errorText = null
-                                if (!hasMicPermission) {
-                                    statusText = "需要麦克风权限"
-                                    errorText = "请允许麦克风权限后，重新按住说话。"
-                                    micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                } else {
-                                    recognizedText = ""
-                                    startListening()
-                                }
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    if (event.changes.none { it.id == down.id && it.pressed }) {
-                                        break
-                                    }
-                                }
+                            if (releasedBeforeTimeout) {
                                 stopListening()
+                            } else {
+                                stopListening("已达到最长识别时长，正在整理文字...")
                             }
                         }
                     },
@@ -857,8 +918,8 @@ internal fun VoiceEntrySheet(
             when {
                 speechRecognizer == null -> "无法创建系统语音识别器"
                 !canQuerySpeechService -> "正在尝试调用系统语音识别服务"
-                isListening -> "按住说话，松手结束"
-                else -> "$statusText · 长按麦克风开始"
+                isListening -> "正在听，松手结束"
+                else -> "$statusText · 长按麦克风开始，最长 ${VOICE_RECOGNITION_MAX_DURATION_MS / 1000} 秒"
             },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall
@@ -867,14 +928,30 @@ internal fun VoiceEntrySheet(
             examples = voiceGuideExamples,
             onExampleSelected = { example ->
                 recognizedText = example
+                voiceResults = parseRecognizedText(example)
                 errorText = null
                 statusText = "已填入示例文字"
             }
+        )
+        VoiceContinuousModeRow(
+            enabled = continuousMode,
+            onToggle = {
+                val nextContinuousMode = !continuousMode
+                continuousMode = nextContinuousMode
+                if (!nextContinuousMode && voiceResults.size > 1) {
+                    voiceResults = recognizedText
+                        .takeIf { it.isNotBlank() }
+                        ?.let { listOf(voiceEntryParser.parseDetailed(it.trim(), uiState)) }
+                        .orEmpty()
+                }
+            },
+            queueSize = voiceResults.size
         )
         MinimalInputLine(
             value = recognizedText,
             onValueChange = {
                 recognizedText = it
+                voiceResults = parseRecognizedText(it)
                 errorText = null
                 statusText = if (it.isBlank()) "等待语音转文字" else "已转成文字"
             },
@@ -884,12 +961,6 @@ internal fun VoiceEntrySheet(
             minLines = 2,
             maxLines = 4
         )
-        previewDraft?.let { draft ->
-            VoiceStructuredPreview(
-                draft = draft,
-                uiState = uiState
-            )
-        }
         errorText?.let { error ->
             Text(
                 error,
@@ -938,6 +1009,7 @@ internal fun VoiceEntrySheet(
                 label = "清空",
                 onClick = {
                     recognizedText = ""
+                    voiceResults = emptyList()
                     errorText = null
                     statusText = "等待语音转文字"
                 },
@@ -948,25 +1020,20 @@ internal fun VoiceEntrySheet(
                 enabled = recognizedText.isNotBlank()
             )
             LedgerActionButton(
-                label = "用这段文字记账",
+                label = when {
+                    voiceResults.size > 1 -> "按顺序确认 ${voiceResults.size} 笔"
+                    voiceResults.isNotEmpty() -> "进入记账页面"
+                    else -> "解析并进入"
+                },
                 icon = Icons.Default.Edit,
-                onClick = { createDraftFromText() },
+                onClick = { submitResults(voiceResults) },
                 modifier = Modifier.weight(1f),
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
                 borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
-                enabled = recognizedText.isNotBlank()
+                enabled = recognizedText.isNotBlank() || voiceResults.isNotEmpty()
             )
         }
-        LedgerActionButton(
-            label = "改为手动输入",
-            icon = Icons.Default.Edit,
-            onClick = onUseManualEntry,
-            modifier = Modifier.fillMaxWidth(),
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            borderColor = LedgerDivider
-        )
         TextButton(
             onClick = onDismiss,
             modifier = Modifier.align(Alignment.CenterHorizontally)
@@ -1010,10 +1077,69 @@ private fun VoiceGuideExamples(
 }
 
 @Composable
-private fun VoiceStructuredPreview(
-    draft: EntryPrefillDraft,
-    uiState: AccountingUiState
+private fun VoiceContinuousModeRow(
+    enabled: Boolean,
+    onToggle: () -> Unit,
+    queueSize: Int
 ) {
+    LedgerPanelSurface(onClick = onToggle) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "连续语音记账",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    if (enabled) "每次识别会追加到待确认队列，当前 $queueSize 笔" else "关闭时每次识别只保留最新结果",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = enabled, onCheckedChange = { onToggle() })
+        }
+    }
+}
+
+@Composable
+private fun VoiceResultQueue(
+    results: List<VoiceEntryParseResult>,
+    uiState: AccountingUiState,
+    onUseOne: (Int) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (results.size > 1) {
+            Text(
+                "已拆出 ${results.size} 笔，保存一笔后会继续打开下一笔确认",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        results.forEachIndexed { index, result ->
+            VoiceStructuredPreview(
+                result = result,
+                uiState = uiState,
+                title = if (results.size > 1) "第 ${index + 1} 笔" else "本地解析预览",
+                actionLabel = if (results.size > 1) "确认此笔" else "进入记账页面",
+                onAction = { onUseOne(index) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun VoiceStructuredPreview(
+    result: VoiceEntryParseResult,
+    uiState: AccountingUiState,
+    title: String = "本地解析预览",
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
+    val draft = result.draft
     val accountName = when (draft.type) {
         TransactionType.TRANSFER -> {
             val from = uiState.activeAccounts.firstOrNull { it.id == draft.fromAccountId }?.name ?: "未识别"
@@ -1034,6 +1160,11 @@ private fun VoiceStructuredPreview(
         TransactionType.TRANSFER -> "转账"
         TransactionType.BALANCE_ADJUSTMENT -> "余额调整"
     }
+    val accountLine = when (draft.type) {
+        TransactionType.TRANSFER -> "账户：$accountName"
+        TransactionType.BALANCE_ADJUSTMENT -> "账户：$accountName"
+        else -> "账户：$accountName  分类：$categoryName"
+    }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1043,312 +1174,144 @@ private fun VoiceStructuredPreview(
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                "本地解析预览",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.SemiBold
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold
+                )
+                VoiceConfidencePill(result.confidence)
+            }
             Text(
                 "类型：$typeLabel  金额：${draft.amount.ifBlank { "未识别" }}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                "账户：$accountName  分类：$categoryName",
+                accountLine,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (draft.merchant.isNotBlank()) {
+                Text(
+                    "商户：${draft.merchant}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            result.learnedHint?.let { hint ->
+                Text(
+                    hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                result.fields.forEach { field ->
+                    VoiceParseFieldRow(field)
+                }
+            }
+            if (actionLabel != null && onAction != null) {
+                LedgerActionButton(
+                    label = actionLabel,
+                    icon = Icons.Default.Edit,
+                    onClick = onAction,
+                    modifier = Modifier.fillMaxWidth(),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                    enabled = draft.amount.isNotBlank()
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceConfidencePill(confidence: VoiceParseConfidence) {
+    val color = when (confidence) {
+        VoiceParseConfidence.HIGH -> MaterialTheme.colorScheme.primary
+        VoiceParseConfidence.MEDIUM -> MaterialTheme.colorScheme.tertiary
+        VoiceParseConfidence.LOW -> MaterialTheme.colorScheme.error
+    }
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = color.copy(alpha = 0.11f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.24f))
+    ) {
+        Text(
+            "置信度：${confidence.label}",
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun VoiceParseFieldRow(field: VoiceParseField) {
+    val color = when (field.status) {
+        VoiceParseFieldStatus.CONFIDENT -> MaterialTheme.colorScheme.primary
+        VoiceParseFieldStatus.NEEDS_CONFIRM -> MaterialTheme.colorScheme.tertiary
+        VoiceParseFieldStatus.MISSING -> MaterialTheme.colorScheme.error
+    }
+    val statusLabel = when (field.status) {
+        VoiceParseFieldStatus.CONFIDENT -> "已识别"
+        VoiceParseFieldStatus.NEEDS_CONFIRM -> "待确认"
+        VoiceParseFieldStatus.MISSING -> "缺失"
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, color.copy(alpha = 0.18f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "${field.label}：${field.value}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    field.message,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                statusLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = color,
+                fontWeight = FontWeight.SemiBold
             )
         }
     }
 }
 
-private fun String.toEntryPrefillDraft(uiState: AccountingUiState): EntryPrefillDraft {
-    val text = trim()
-    val type = when {
-        transferVoiceKeywords.any { text.contains(it, ignoreCase = true) } -> TransactionType.TRANSFER
-        incomeVoiceKeywords.any { text.contains(it, ignoreCase = true) } -> TransactionType.INCOME
-        else -> TransactionType.EXPENSE
-    }
-    val categories = when (type) {
-        TransactionType.INCOME -> uiState.incomeCategories
-        TransactionType.EXPENSE -> uiState.expenseCategories
-        else -> emptyList()
-    }
-    val category = findVoiceCategory(text, categories, type)
-    val account = if (type == TransactionType.TRANSFER) null else findVoiceAccount(text, uiState.activeAccounts)
-    val fromAccount = if (type == TransactionType.TRANSFER) {
-        findTransferSourceAccount(text, uiState.activeAccounts)
-    } else {
-        null
-    }
-    val toAccount = if (type == TransactionType.TRANSFER) {
-        findTransferTargetAccount(text, uiState.activeAccounts, fromAccount)
-    } else {
-        null
-    }
-    val tagIds = uiState.tags
-        .filter { text.contains(it.name, ignoreCase = true) }
-        .map { it.id }
-        .toSet()
-
-    return EntryPrefillDraft(
-        type = type,
-        amount = extractVoiceAmount(text),
-        accountId = account?.id,
-        fromAccountId = fromAccount?.id,
-        toAccountId = toAccount?.id,
-        categoryId = category?.id,
-        note = text,
-        tagIds = tagIds,
-        occurredAt = voiceOccurredAt(text)
-    )
-}
-
-private val transferVoiceKeywords = listOf("转账", "转到", "转入", "转出", "从")
-
-private fun voiceGuideExamples(uiState: AccountingUiState): List<String> {
-    val preferredAccount = uiState.activeAccounts.firstOrNull()?.name ?: "支付宝"
-    val secondAccount = uiState.activeAccounts.drop(1).firstOrNull()?.name ?: "微信"
-    return listOf(
-        "今天 午饭 二十八 $preferredAccount",
-        "昨天 打车 36 $secondAccount",
-        "工资到账 八千 $preferredAccount",
-        "从$preferredAccount 转到 $secondAccount 五十"
-    )
-}
-
-private val incomeVoiceKeywords = listOf("收入", "工资", "到账", "入账", "收到", "报销", "奖金", "退款", "兼职", "收益", "红包")
-
-internal fun extractVoiceAmount(text: String): String {
-    val numericMatches = Regex("""\d+(?:\.\d{1,2})?""")
-        .findAll(text.replace(',', '.').replace('，', '.'))
-        .map { it.value }
-        .toList()
-    numericMatches.lastOrNull()?.let { return it }
-
-    return Regex("""[零〇一二两俩三四五六七八九十百千万亿点块元圆毛角分]+""")
-        .findAll(text)
-        .map { it.value }
-        .filter { segment ->
-            segment.length > 1 || segment.any { it in "十百千万亿点块元圆毛角分" }
-        }
-        .mapNotNull { parseChineseAmount(it) }
-        .lastOrNull()
-        ?.stripTrailingZeros()
-        ?.toPlainString()
-        .orEmpty()
-}
-
-private fun parseChineseAmount(raw: String): BigDecimal? {
-    val text = raw
-        .replace("人民币", "")
-        .replace("块钱", "块")
-        .replace('圆', '元')
-        .replace('俩', '两')
-        .trim()
-    if (text.isBlank()) return null
-
-    val currencyIndex = text.indexOfFirst { it in "块元" }
-    if (currencyIndex >= 0) {
-        val integerPart = text.substring(0, currencyIndex).ifBlank { "零" }
-        val fractionPart = text.substring(currencyIndex + 1)
-        val integer = parseChineseInteger(integerPart) ?: return null
-        return BigDecimal.valueOf(integer).add(parseChineseFraction(fractionPart))
-    }
-
-    if (text.any { it in "毛角分" }) {
-        return parseChineseFraction(text)
-    }
-
-    val pointIndex = text.indexOf('点')
-    if (pointIndex >= 0) {
-        val integer = parseChineseInteger(text.substring(0, pointIndex).ifBlank { "零" }) ?: return null
-        val decimalDigits = text.substring(pointIndex + 1)
-            .mapNotNull { chineseDigitValue(it) }
-            .joinToString("")
-        if (decimalDigits.isBlank()) return BigDecimal.valueOf(integer)
-        return BigDecimal("${integer}.${decimalDigits.take(2)}")
-    }
-
-    return parseChineseInteger(text)?.let { BigDecimal.valueOf(it) }
-}
-
-private fun parseChineseFraction(text: String): BigDecimal {
-    if (text.isBlank()) return BigDecimal.ZERO
-    val normalized = text.replace('毛', '角')
-    val pureDigits = normalized.filter { chineseDigitValue(it) != null }
-    if ('角' !in normalized && '分' !in normalized && pureDigits.length == 1) {
-        return BigDecimal("0.${chineseDigitValue(pureDigits.first()) ?: 0}")
-    }
-    val jiao = normalized.substringBefore("角", missingDelimiterValue = "")
-        .lastOrNull()
-        ?.let { chineseDigitValue(it) }
-    val fenSource = when {
-        "分" in normalized -> normalized.substringBefore("分").substringAfterLast("角")
-        "角" in normalized -> normalized.substringAfter("角")
-        else -> normalized
-    }
-    val fenDigits = fenSource.mapNotNull { chineseDigitValue(it) }
-    val tenths = jiao ?: fenDigits.getOrNull(0)
-    val hundredths = if (jiao != null) fenDigits.getOrNull(0) else fenDigits.getOrNull(1)
-    val decimal = buildString {
-        append(tenths ?: 0)
-        append(hundredths ?: 0)
-    }
-    return BigDecimal("0.$decimal")
-}
-
-private fun parseChineseInteger(text: String): Long? {
-    if (text.isBlank()) return 0L
-    var result = 0L
-    var section = 0L
-    var number = 0L
-    text.forEach { char ->
-        when (char) {
-            '零', '〇' -> number = 0L
-            '十' -> {
-                section += (if (number == 0L) 1L else number) * 10L
-                number = 0L
-            }
-            '百' -> {
-                section += (if (number == 0L) 1L else number) * 100L
-                number = 0L
-            }
-            '千' -> {
-                section += (if (number == 0L) 1L else number) * 1000L
-                number = 0L
-            }
-            '万' -> {
-                result += (section + number) * 10_000L
-                section = 0L
-                number = 0L
-            }
-            '亿' -> {
-                result += (section + number) * 100_000_000L
-                section = 0L
-                number = 0L
-            }
-            else -> {
-                val digit = chineseDigitValue(char) ?: return null
-                number = digit.toLong()
-            }
-        }
-    }
-    return result + section + number
-}
-
-private fun chineseDigitValue(char: Char): Int? = when (char) {
-    '零', '〇' -> 0
-    '一' -> 1
-    '二', '两' -> 2
-    '三' -> 3
-    '四' -> 4
-    '五' -> 5
-    '六' -> 6
-    '七' -> 7
-    '八' -> 8
-    '九' -> 9
-    else -> null
-}
-
-private fun findVoiceAccount(text: String, accounts: List<AccountEntity>): AccountEntity? {
-    return accounts.firstOrNull { account ->
-        textMatchesAccount(text, account)
-    } ?: accounts.firstOrNull()
-}
-
-private fun findTransferSourceAccount(text: String, accounts: List<AccountEntity>): AccountEntity? {
-    val fromSegment = text
-        .substringAfter("从", missingDelimiterValue = text)
-        .substringBefore("转到")
-        .substringBefore("转入")
-        .substringBefore("到")
-        .substringBefore("转")
-    return accounts.firstOrNull { textMatchesAccount(fromSegment, it) }
-        ?: accounts.firstOrNull()
-}
-
-private fun findTransferTargetAccount(
-    text: String,
-    accounts: List<AccountEntity>,
-    sourceAccount: AccountEntity?
-): AccountEntity? {
-    val targetSegment = when {
-        "转到" in text -> text.substringAfter("转到")
-        "转入" in text -> text.substringAfter("转入")
-        "到" in text -> text.substringAfterLast("到")
-        else -> text
-    }
-    return accounts.firstOrNull { account ->
-        account.id != sourceAccount?.id && textMatchesAccount(targetSegment, account)
-    } ?: accounts.firstOrNull { it.id != sourceAccount?.id }
-}
-
-private fun textMatchesAccount(text: String, account: AccountEntity): Boolean {
-    return text.contains(account.name, ignoreCase = true) ||
-        accountVoiceAliases(account.type).any { text.contains(it, ignoreCase = true) }
-}
-
-private fun accountVoiceAliases(type: AccountType): List<String> = when (type) {
-    AccountType.CASH -> listOf("现金")
-    AccountType.BANK_CARD -> listOf("银行卡", "储蓄卡", "卡里")
-    AccountType.THIRD_PARTY_PAYMENT -> listOf("微信", "支付宝", "支付")
-    AccountType.STORED_VALUE_CARD -> listOf("储值卡")
-    AccountType.TRANSIT_CARD -> listOf("公交卡", "交通卡")
-    AccountType.DIGITAL_BALANCE -> listOf("余额")
-    AccountType.CREDIT -> listOf("信用卡", "花呗", "白条")
-    AccountType.CUSTOM -> emptyList()
-}
-
-private fun findVoiceCategory(
-    text: String,
-    categories: List<CategoryEntity>,
-    type: TransactionType
-): CategoryEntity? {
-    categories.firstOrNull { text.contains(it.name, ignoreCase = true) }?.let { return it }
-    val hints = if (type == TransactionType.INCOME) incomeCategoryHints else expenseCategoryHints
-    return categories.firstOrNull { category ->
-        hints[category.iconName].orEmpty().any { text.contains(it, ignoreCase = true) }
-    }
-}
-
-private val expenseCategoryHints = mapOf(
-    "restaurant" to listOf("饭", "餐", "午饭", "晚饭", "早餐", "外卖", "咖啡", "奶茶", "饮品", "吃"),
-    "commute" to listOf("打车", "地铁", "公交", "交通", "车费", "通勤"),
-    "directions_bus" to listOf("公交", "地铁", "车票", "交通卡"),
-    "shopping_bag" to listOf("购物", "买", "超市", "衣服"),
-    "storefront" to listOf("门店", "超市", "便利店"),
-    "devices" to listOf("数码", "手机", "电脑", "耳机"),
-    "phone_iphone" to listOf("话费", "手机", "流量"),
-    "home" to listOf("房租", "水电", "居家", "物业"),
-    "credit_card" to listOf("信用卡", "还款"),
-    "receipt_long" to listOf("账单", "缴费")
-)
-
-private val incomeCategoryHints = mapOf(
-    "work" to listOf("工资", "薪水", "薪资"),
-    "redeem" to listOf("红包", "奖励"),
-    "add_card" to listOf("入账", "到账"),
-    "payments" to listOf("报销", "退款", "收到"),
-    "wallet" to listOf("兼职", "收入"),
-    "assessment" to listOf("收益", "理财", "分红")
-)
-
-private fun voiceOccurredAt(text: String): Long {
-    val calendar = Calendar.getInstance()
-    when {
-        text.contains("前天") -> calendar.add(Calendar.DAY_OF_YEAR, -2)
-        text.contains("昨天") -> calendar.add(Calendar.DAY_OF_YEAR, -1)
-    }
-    return calendar.timeInMillis
-}
-
 private fun voiceRecognitionIntent(): Intent {
     return Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, VOICE_RECOGNITION_MAX_DURATION_MS)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, VOICE_RECOGNITION_MAX_DURATION_MS)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 4_000L)
     }
 }
 

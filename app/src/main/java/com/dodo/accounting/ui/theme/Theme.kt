@@ -8,9 +8,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.unit.dp
-import com.dodo.accounting.R
 
 val PrimaryBlueGray = Color(0xFF5C7C8A)
 val BackgroundGray = Color(0xFFF7F8FA)
@@ -22,45 +20,44 @@ val TextTertiary = Color(0xFF8A8A8E)
 val IncomeGreen = Color(0xFF81C784)
 val ExpenseRed = Color(0xFFE57373)
 
-@Composable
 private fun lightScheme(): ColorScheme = lightColorScheme(
-    primary = colorResource(R.color.brand_primary),
+    primary = Color(0xFF5C7C8A),
     onPrimary = Color.White,
-    primaryContainer = colorResource(R.color.brand_primary_light),
-    onPrimaryContainer = colorResource(R.color.brand_primary),
-    secondary = colorResource(R.color.income_amount),
+    primaryContainer = Color(0xFFEEF4F6),
+    onPrimaryContainer = Color(0xFF5C7C8A),
+    secondary = Color(0xFF81C784),
     onSecondary = Color.White,
-    tertiary = colorResource(R.color.warning_amount),
-    background = colorResource(R.color.app_background),
-    onBackground = colorResource(R.color.app_on_surface),
-    surface = colorResource(R.color.app_surface),
-    onSurface = colorResource(R.color.app_on_surface),
-    surfaceVariant = colorResource(R.color.app_surface_variant),
-    onSurfaceVariant = colorResource(R.color.app_on_surface_variant),
-    outline = colorResource(R.color.app_outline),
-    outlineVariant = colorResource(R.color.app_outline_variant),
-    error = colorResource(R.color.over_budget),
+    tertiary = Color(0xFFEA580C),
+    background = Color(0xFFF7F8FA),
+    onBackground = Color(0xFF1A1A1A),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF1A1A1A),
+    surfaceVariant = Color(0xFFF2F4F7),
+    onSurfaceVariant = Color(0xFF8A8A8E),
+    outline = Color(0xFFD6DAE0),
+    outlineVariant = Color(0xFFE5E7EB),
+    error = Color(0xFFE57373),
     onError = Color.White
 )
 
-@Composable
 private fun darkScheme(): ColorScheme = darkColorScheme(
-    primary = colorResource(R.color.brand_primary),
-    onPrimary = Color.White,
-    primaryContainer = colorResource(R.color.brand_primary_light),
-    onPrimaryContainer = colorResource(R.color.income_amount),
-    secondary = colorResource(R.color.income_amount),
+    primary = Color(0xFF8FAFBD),
+    onPrimary = Color(0xFF101820),
+    primaryContainer = Color(0xFF24363E),
+    onPrimaryContainer = Color(0xFF9BD89F),
+    secondary = Color(0xFF9BD89F),
     onSecondary = Color.Black,
-    tertiary = colorResource(R.color.warning_amount),
-    background = colorResource(R.color.app_background),
-    onBackground = colorResource(R.color.app_on_surface),
-    surface = colorResource(R.color.app_surface),
-    onSurface = colorResource(R.color.app_on_surface),
-    surfaceVariant = colorResource(R.color.app_surface_variant),
-    onSurfaceVariant = colorResource(R.color.app_on_surface_variant),
-    outline = colorResource(R.color.app_outline),
-    outlineVariant = colorResource(R.color.app_outline_variant),
-    error = colorResource(R.color.over_budget)
+    tertiary = Color(0xFFF59E0B),
+    background = Color(0xFF111827),
+    onBackground = Color(0xFFF9FAFB),
+    surface = Color(0xFF1F2937),
+    onSurface = Color(0xFFF9FAFB),
+    surfaceVariant = Color(0xFF273345),
+    onSurfaceVariant = Color(0xFFCBD5E1),
+    outline = Color(0xFF475569),
+    outlineVariant = Color(0xFF334155),
+    error = Color(0xFFF19999),
+    onError = Color(0xFF2A1111)
 )
 
 val AccountingShapes = Shapes(

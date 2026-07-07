@@ -243,7 +243,7 @@ internal fun HomeScreen(
                 },
                 onPreviousPeriod = { viewModel.moveHomePeriod(-1) },
                 onNextPeriod = { viewModel.moveHomePeriod(1) },
-                onOpenCustomRange = { customRangeSheetOpen = true },
+                onResetToCurrent = { viewModel.resetHomePeriodToCurrent() },
                 amountsHidden = amountsHidden,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
             )
@@ -314,7 +314,7 @@ internal fun HomeMonthlySummaryCard(
     onPeriodSelected: (HomePeriod) -> Unit,
     onPreviousPeriod: () -> Unit,
     onNextPeriod: () -> Unit,
-    onOpenCustomRange: () -> Unit,
+    onResetToCurrent: () -> Unit,
     amountsHidden: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -364,24 +364,25 @@ internal fun HomeMonthlySummaryCard(
                 }
             }
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .ledgerPressClickable(onClick = onOpenCustomRange),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     homeRangeLabel(period, rangeStart, rangeEndExclusive),
+                    modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Icon(
-                    Icons.Default.ChevronRight,
-                    contentDescription = "切换时间",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                IconButton(onClick = onResetToCurrent) {
+                    Icon(
+                        Icons.Default.Restore,
+                        contentDescription = "回到当前周期",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             Spacer(Modifier.height(24.dp))

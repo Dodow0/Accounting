@@ -700,6 +700,7 @@ internal fun CalendarDayCell(
                 if (it.expenseCents > 0) {
                     Text(
                         calendarAmountLabel("-", it.expenseCents, amountsHidden),
+                        modifier = Modifier.fillMaxWidth(),
                         style = amountTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -709,6 +710,7 @@ internal fun CalendarDayCell(
                 if (it.incomeCents > 0) {
                     Text(
                         calendarAmountLabel("+", it.incomeCents, amountsHidden),
+                        modifier = Modifier.fillMaxWidth(),
                         style = amountTextStyle,
                         color = MaterialTheme.colorScheme.secondary,
                         maxLines = 1,
@@ -731,13 +733,13 @@ internal fun CalendarDayCell(
 }
 
 private fun calendarAmountLabel(prefix: String, cents: Long, hidden: Boolean): String {
-    if (hidden) return "${prefix}****"
+    if (hidden) return "${prefix}***"
     val absCents = if (cents < 0) -cents else cents
-    val body = if (absCents >= 1_000_000L) {
-        String.format(Locale.CHINA, "%.1f万", absCents / 1_000_000.0)
+    val body = when {
+        absCents >= 1_000_000L -> String.format(Locale.CHINA, "%.1f万", absCents / 1_000_000.0)
             .replace(".0万", "万")
-    } else {
-        Money(absCents).formatPlain()
+        absCents >= 10_000L -> (absCents / 100).toString()
+        else -> Money(absCents).formatPlain().trimEnd('0').trimEnd('.')
     }
     return "$prefix$body"
 }
