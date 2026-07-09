@@ -1,5 +1,9 @@
 package com.dodo.accounting.ui.screen
 
+import android.Manifest
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.SpeechRecognizer
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -83,6 +87,7 @@ import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardVoice
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PhoneIphone
@@ -122,12 +127,14 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -219,12 +226,15 @@ internal fun EntrySheetContentV2(
     uiState: AccountingUiState,
     viewModel: AccountingViewModel,
     prefillDraft: EntryPrefillDraft? = null,
+    voiceEntryRequestSignal: Int = 0,
     entryPreferences: EntryPreferences = EntryPreferences(),
     dismissRequestSignal: Int = 0,
     onPrefillConsumed: () -> Unit = {},
+    onVoiceEntryRequestConsumed: () -> Unit = {},
     onDone: (saved: Boolean) -> Unit
 ) {
     val editing = uiState.editingTransaction
+    val isEditingLegacyBalanceAdjustment = editing?.transaction?.type == TransactionType.BALANCE_ADJUSTMENT
     var selectedType by remember { mutableStateOf(TransactionType.EXPENSE) }
     var amount by remember { mutableStateOf("") }
     var accountId by remember { mutableStateOf<Long?>(null) }
@@ -244,19 +254,67 @@ internal fun EntrySheetContentV2(
     var calculatorVisible by remember { mutableStateOf(true) }
     val contentScrollState = rememberScrollState()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val latestUiState by rememberUpdatedState(uiState)
+    val voiceEntryParser = remember { VoiceEntryParser() }
+    val speechRecognizer = remember(context) {
+        runCatching { SpeechRecognizer.createSpeechRecognizer(context) }.getOrNull()
+    }
+    var voicePanelVisible by remember { mutableStateOf(false) }
+    var voiceRawText by remember { mutableStateOf("") }
+    var voiceStatusText by remember { mutableStateOf("语音待命") }
+    var voiceErrorText by remember { mutableStateOf<String?>(null) }
+    var isVoiceListening by remember { mutableStateOf(false) }
+    var voiceResult by remember { mutableStateOf<VoiceEntryParseResult?>(null) }
+    var shouldStartVoiceAfterPermission by remember { mutableStateOf(false) }
 
-    fun activeAccountIdOrNull(id: Long?): Long? {
-        return uiState.activeAccounts.firstOrNull { it.id == id }?.id
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            voiceErrorText = null
+            shouldStartVoiceAfterPermission = true
+        } else {
+            isVoiceListening = false
+            voiceStatusText = "需要麦克风权限"
+            voiceErrorText = "语音记账需要麦克风权限；也可以先手动记账。"
+        }
     }
 
-    fun preferredAccountId(): Long? {
-        return activeAccountIdOrNull(entryPreferences.defaultAccountId)
-            ?: uiState.activeAccounts.firstOrNull()?.id
+    fun activeAccountIdOrNull(id: Long?, state: AccountingUiState = uiState): Long? {
+        return state.activeAccounts.firstOrNull { it.id == id }?.id
     }
 
-    fun transferTargetFor(sourceAccountId: Long?): Long? {
-        return uiState.activeAccounts.firstOrNull { it.id != sourceAccountId }?.id
+    fun preferredAccountId(state: AccountingUiState = uiState): Long? {
+        return activeAccountIdOrNull(entryPreferences.defaultAccountId, state)
+            ?: state.activeAccounts.firstOrNull()?.id
+    }
+
+    fun transferTargetFor(sourceAccountId: Long?, state: AccountingUiState = uiState): Long? {
+        return state.activeAccounts.firstOrNull { it.id != sourceAccountId }?.id
+    }
+
+    fun applyPrefillDraft(draft: EntryPrefillDraft, state: AccountingUiState = uiState) {
+        if (editing != null) return
+        val defaultAccountId = preferredAccountId(state)
+        val draftAccountId = activeAccountIdOrNull(draft.accountId, state)
+        val draftFromAccountId = activeAccountIdOrNull(draft.fromAccountId, state) ?: defaultAccountId
+        val draftToAccountId = activeAccountIdOrNull(draft.toAccountId, state)
+        selectedType = draft.type
+        amount = draft.amount
+        accountId = draftAccountId ?: defaultAccountId
+        fromAccountId = draftFromAccountId
+        toAccountId = draftToAccountId
+            ?.takeIf { it != draftFromAccountId }
+            ?: transferTargetFor(draftFromAccountId, state)
+        categoryId = draft.categoryId
+        merchant = draft.merchant
+        note = draft.note
+        selectedTagIds = draft.tagIds
+        occurredAt = draft.occurredAt
+        formError = null
+        calculatorVisible = true
     }
 
     fun clearForm() {
@@ -301,25 +359,7 @@ internal fun EntrySheetContentV2(
 
     LaunchedEffect(prefillDraft) {
         val draft = prefillDraft ?: return@LaunchedEffect
-        if (editing == null) {
-            val defaultAccountId = preferredAccountId()
-            val draftAccountId = activeAccountIdOrNull(draft.accountId)
-            val draftFromAccountId = activeAccountIdOrNull(draft.fromAccountId) ?: defaultAccountId
-            val draftToAccountId = activeAccountIdOrNull(draft.toAccountId)
-            selectedType = draft.type
-            amount = draft.amount
-            accountId = draftAccountId ?: defaultAccountId
-            fromAccountId = draftFromAccountId
-            toAccountId = draftToAccountId
-                ?.takeIf { it != draftFromAccountId }
-                ?: transferTargetFor(draftFromAccountId)
-            categoryId = draft.categoryId
-            merchant = draft.merchant
-            note = draft.note
-            selectedTagIds = draft.tagIds
-            occurredAt = draft.occurredAt
-            formError = null
-        }
+        applyPrefillDraft(draft)
         onPrefillConsumed()
     }
 
@@ -339,6 +379,123 @@ internal fun EntrySheetContentV2(
 
     LaunchedEffect(occurredAt) {
         viewModel.setEntryOccurredAt(occurredAt)
+    }
+
+    fun startVoiceRecognition() {
+        voicePanelVisible = true
+        voiceErrorText = null
+        voiceResult = null
+        if (speechRecognizer == null) {
+            isVoiceListening = false
+            voiceStatusText = "语音转文字不可用"
+            voiceErrorText = "当前设备没有可用的系统语音识别服务"
+            return
+        }
+        if (!hasRecordAudioPermission(context)) {
+            isVoiceListening = false
+            voiceStatusText = "需要麦克风权限"
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        voiceRawText = ""
+        voiceStatusText = "正在启动语音识别..."
+        runCatching {
+            speechRecognizer.cancel()
+            speechRecognizer.startListening(voiceRecognitionIntent())
+        }.onFailure { error ->
+            isVoiceListening = false
+            voiceStatusText = "语音转文字启动失败"
+            voiceErrorText = error.localizedMessage?.let { "无法启动系统语音识别：$it" } ?: "无法启动系统语音识别"
+        }
+    }
+
+    LaunchedEffect(voiceEntryRequestSignal) {
+        if (voiceEntryRequestSignal > 0 && editing == null) {
+            clearForm()
+            voicePanelVisible = true
+            startVoiceRecognition()
+            onVoiceEntryRequestConsumed()
+        }
+    }
+
+    LaunchedEffect(shouldStartVoiceAfterPermission) {
+        if (shouldStartVoiceAfterPermission) {
+            shouldStartVoiceAfterPermission = false
+            startVoiceRecognition()
+        }
+    }
+
+    DisposableEffect(speechRecognizer) {
+        val listener = object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {
+                isVoiceListening = true
+                voiceStatusText = "正在识别，请说话"
+                voiceErrorText = null
+            }
+
+            override fun onBeginningOfSpeech() {
+                isVoiceListening = true
+                voiceStatusText = "正在听..."
+            }
+
+            override fun onRmsChanged(rmsdB: Float) = Unit
+
+            override fun onBufferReceived(buffer: ByteArray?) = Unit
+
+            override fun onEndOfSpeech() {
+                isVoiceListening = false
+                voiceStatusText = "正在整理文字..."
+            }
+
+            override fun onError(error: Int) {
+                isVoiceListening = false
+                val appHasMicPermission = hasRecordAudioPermission(context)
+                voiceStatusText = "语音转文字失败"
+                voiceErrorText = speechRecognitionErrorMessage(error, appHasMicPermission)
+            }
+
+            override fun onResults(results: Bundle?) {
+                val text = results
+                    ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    ?.firstOrNull()
+                    .orEmpty()
+                    .trim()
+                isVoiceListening = false
+                if (text.isBlank()) {
+                    voiceStatusText = "未识别到文字"
+                    voiceErrorText = "没有听清楚，可以点麦克风再试一次。"
+                    return
+                }
+                val currentUiState = latestUiState
+                voiceRawText = text
+                val parsed = voiceEntryParser.parseDetailed(text, currentUiState)
+                voiceResult = parsed
+                applyPrefillDraft(parsed.draft, currentUiState)
+                voiceStatusText = "已识别并填入"
+                voiceErrorText = null
+            }
+
+            override fun onPartialResults(partialResults: Bundle?) {
+                val text = partialResults
+                    ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    ?.firstOrNull()
+                    .orEmpty()
+                    .trim()
+                if (text.isNotBlank()) {
+                    voiceRawText = text
+                    voiceStatusText = "正在转文字..."
+                    voiceErrorText = null
+                }
+            }
+
+            override fun onEvent(eventType: Int, params: Bundle?) = Unit
+        }
+
+        speechRecognizer?.setRecognitionListener(listener)
+        onDispose {
+            speechRecognizer?.cancel()
+            speechRecognizer?.destroy()
+        }
     }
 
     val categories = when (selectedType) {
@@ -439,6 +596,10 @@ internal fun EntrySheetContentV2(
 
     fun submit(keepOpenAfterSave: Boolean = false) {
         if (isSubmitting) return
+        if (isEditingLegacyBalanceAdjustment) {
+            formError = "余额校正功能已移除，历史记录仅保留展示"
+            return
+        }
         val submittedAmount = normalizedAmountInput(amount)
         val validationError = validateEntryDraft(
             type = selectedType,
@@ -524,7 +685,20 @@ internal fun EntrySheetContentV2(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Spacer(Modifier.size(40.dp))
+            if (entryPreferences.voiceEnabled && editing == null) {
+                IconButton(
+                    onClick = { startVoiceRecognition() },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        Icons.Default.KeyboardVoice,
+                        contentDescription = "语音记账",
+                        tint = if (isVoiceListening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                Spacer(Modifier.size(40.dp))
+            }
             CompactAccountPicker(
                 label = if (selectedType == TransactionType.TRANSFER) "转出账户" else "账户",
                 accounts = uiState.activeAccounts,
@@ -560,6 +734,27 @@ internal fun EntrySheetContentV2(
                 trackColor = MaterialTheme.colorScheme.primaryContainer
             )
         }
+        AnimatedVisibility(
+            visible = voicePanelVisible && editing == null,
+            enter = fadeIn(animationSpec = tween(durationMillis = 140)),
+            exit = fadeOut(animationSpec = tween(durationMillis = 120))
+        ) {
+            EntryVoiceStatusPanel(
+                statusText = voiceStatusText,
+                rawText = voiceRawText,
+                errorText = voiceErrorText,
+                isListening = isVoiceListening,
+                result = voiceResult,
+                uiState = uiState,
+                onRetry = { startVoiceRecognition() },
+                onDismiss = {
+                    if (isVoiceListening) speechRecognizer?.cancel()
+                    isVoiceListening = false
+                    voicePanelVisible = false
+                },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+        }
 
         Column(
             modifier = Modifier
@@ -575,11 +770,15 @@ internal fun EntrySheetContentV2(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                TypeSelector(selectedType = selectedType, onTypeSelected = {
-                    selectedType = it
-                    categoryId = null
-                    formError = null
-                })
+                if (isEditingLegacyBalanceAdjustment) {
+                    LegacyBalanceAdjustmentNotice()
+                } else {
+                    TypeSelector(selectedType = selectedType, onTypeSelected = {
+                        selectedType = it
+                        categoryId = null
+                        formError = null
+                    })
+                }
 
                 Column(
                     modifier = Modifier
@@ -757,9 +956,9 @@ internal fun EntrySheetContentV2(
                 },
                 hasPendingCalculation = hasPendingCalculation,
                 onConfirm = { confirmAmountOrSubmit() },
-                confirmEnabled = !isSubmitting,
+                confirmEnabled = !isSubmitting && !isEditingLegacyBalanceAdjustment,
                 onSaveAndContinue = { submit(keepOpenAfterSave = true) },
-                saveAndContinueEnabled = editing == null && !isSubmitting
+                saveAndContinueEnabled = editing == null && !isSubmitting && !isEditingLegacyBalanceAdjustment
             )
         }
     }
@@ -805,6 +1004,159 @@ internal fun EntrySheetContentV2(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun LegacyBalanceAdjustmentNotice() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+        border = BorderStroke(1.dp, LedgerDivider)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.History,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    "历史余额校正",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "该功能已移除，此记录仅保留展示，可关闭或移入回收站。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EntryVoiceStatusPanel(
+    statusText: String,
+    rawText: String,
+    errorText: String?,
+    isListening: Boolean,
+    result: VoiceEntryParseResult?,
+    uiState: AccountingUiState,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val toneColor = when {
+        errorText != null -> MaterialTheme.colorScheme.error
+        isListening -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.tertiary
+    }
+    val draft = result?.draft
+    val categories = when (draft?.type) {
+        TransactionType.INCOME -> uiState.incomeCategories
+        TransactionType.EXPENSE -> uiState.expenseCategories
+        else -> emptyList()
+    }
+    val accountName = when (draft?.type) {
+        TransactionType.TRANSFER -> {
+            val from = uiState.activeAccounts.firstOrNull { it.id == draft.fromAccountId }?.name ?: "转出账户待选"
+            val to = uiState.activeAccounts.firstOrNull { it.id == draft.toAccountId }?.name ?: "转入账户待选"
+            "$from -> $to"
+        }
+        null -> ""
+        else -> uiState.activeAccounts.firstOrNull { it.id == draft.accountId }?.name ?: "账户待选"
+    }
+    val categoryName = categories.firstOrNull { it.id == draft?.categoryId }?.name
+    val fillSummary = buildList {
+        draft?.amount?.takeIf { it.isNotBlank() }?.let { add("金额 $it") }
+        accountName.takeIf { it.isNotBlank() }?.let { add(it) }
+        categoryName?.let { add(it) }
+    }.joinToString(" · ")
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = toneColor.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, toneColor.copy(alpha = 0.22f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.KeyboardVoice,
+                contentDescription = null,
+                tint = toneColor,
+                modifier = Modifier.size(20.dp)
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    statusText,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "识别原文只用于确认，不会自动保存到备注",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (rawText.isNotBlank()) {
+                    Text(
+                        "已识别：$rawText",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (fillSummary.isNotBlank()) {
+                    Text(
+                        fillSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = toneColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                errorText?.let { error ->
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            TextButton(onClick = onRetry) {
+                Text("重试")
+            }
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "收起语音识别",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 

@@ -652,14 +652,6 @@ class AccountingViewModel @Inject constructor(
         occurredAt: Long = System.currentTimeMillis()
     ) = transactionActions.addTransfer(amount, fromAccountId, toAccountId, note, tagIds, occurredAt)
 
-    fun addBalanceAdjustment(
-        amount: String,
-        accountId: Long?,
-        note: String,
-        tagIds: List<Long> = emptyList(),
-        occurredAt: Long = System.currentTimeMillis()
-    ) = transactionActions.addBalanceAdjustment(amount, accountId, note, tagIds, occurredAt)
-
     fun startEditTransaction(transaction: TransactionWithDetails) = transactionActions.startEditTransaction(transaction)
 
     fun cancelEditTransaction() = transactionActions.cancelEditTransaction()

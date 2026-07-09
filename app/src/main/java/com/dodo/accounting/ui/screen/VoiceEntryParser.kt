@@ -1,9 +1,7 @@
 package com.dodo.accounting.ui.screen
 
-import com.dodo.accounting.data.local.entity.AccountEntity
 import com.dodo.accounting.data.local.entity.CategoryEntity
 import com.dodo.accounting.data.local.entity.TransactionType
-import com.dodo.accounting.domain.model.Money
 import com.dodo.accounting.ui.viewmodel.AccountingUiState
 import java.time.Instant
 import java.time.ZoneId
@@ -55,7 +53,7 @@ internal class VoiceEntryParser(
         } else {
             null
         }
-        val amountResolution = resolveAmount(trimmed, type, accountMatch?.value, uiState)
+        val amountResolution = resolveAmount(trimmed)
         val occurredAtMatch = occurredAt(trimmed)
         val tagIds = uiState.tags
             .filter { trimmed.contains(it.name, ignoreCase = true) }
@@ -70,38 +68,14 @@ internal class VoiceEntryParser(
             toAccountId = toAccountMatch?.value?.id,
             categoryId = categoryMatch.value?.id,
             merchant = historyHint?.merchant.orEmpty(),
-            note = trimmed,
+            note = extractExplicitNote(trimmed),
             tagIds = tagIds,
             occurredAt = occurredAtMatch.value
         )
 
         return VoiceEntryParseResult(
             draft = draft,
-            learnedHint = historyHint?.reason,
-            fields = buildList {
-                add(typeMatch.toParseField("类型", transactionTypeLabel(type)))
-                add(amountField(amountResolution))
-                if (type == TransactionType.TRANSFER) {
-                    add((fromAccountMatch ?: missingMatch()).toParseField("转出账户", fromAccountMatch?.value?.name.orEmpty()))
-                    add((toAccountMatch ?: missingMatch()).toParseField("转入账户", toAccountMatch?.value?.name.orEmpty()))
-                } else if (type == TransactionType.BALANCE_ADJUSTMENT) {
-                    add((accountMatch ?: missingMatch()).toParseField("账户", accountMatch?.value?.name.orEmpty()))
-                } else {
-                    add((accountMatch ?: missingMatch()).toParseField("账户", accountMatch?.value?.name.orEmpty()))
-                    add(categoryMatch.toParseField("分类", categoryMatch.value?.name.orEmpty()))
-                }
-                add(occurredAtMatch.toParseField("时间", occurredAtMatch.displayValue))
-                if (draft.merchant.isNotBlank()) {
-                    add(
-                        VoiceParseField(
-                            label = "商户",
-                            value = draft.merchant,
-                            status = VoiceParseFieldStatus.CONFIDENT,
-                            message = "根据历史流水补全"
-                        )
-                    )
-                }
-            }
+            learnedHint = historyHint?.reason
         )
     }
 
@@ -127,11 +101,6 @@ internal class VoiceEntryParser(
 
     private fun detectType(text: String): VoiceResolved<TransactionType> {
         return when {
-            VoiceEntityMatcher.isBalanceAdjustmentText(text) -> VoiceResolved(
-                value = TransactionType.BALANCE_ADJUSTMENT,
-                source = VoiceResolutionSource.DIRECT,
-                message = "识别到余额调整表达"
-            )
             VoiceEntityMatcher.isTransferText(text) -> VoiceResolved(
                 value = TransactionType.TRANSFER,
                 source = VoiceResolutionSource.DIRECT,
@@ -150,30 +119,12 @@ internal class VoiceEntryParser(
         }
     }
 
-    private fun resolveAmount(
-        text: String,
-        type: TransactionType,
-        account: AccountEntity?,
-        uiState: AccountingUiState
-    ): VoiceAmountResolution {
+    private fun resolveAmount(text: String): VoiceAmountResolution {
         val rawAmount = extractAmount(text)
         if (rawAmount.isBlank()) {
-            return VoiceAmountResolution(amount = "", status = VoiceParseFieldStatus.MISSING, message = "请补充金额，例如“午饭 28”")
+            return VoiceAmountResolution(amount = "")
         }
-        if (type != TransactionType.BALANCE_ADJUSTMENT || !VoiceEntityMatcher.isBalanceTargetText(text)) {
-            return VoiceAmountResolution(amount = rawAmount, status = VoiceParseFieldStatus.CONFIDENT, message = "已识别金额")
-        }
-        val accountId = account?.id
-            ?: return VoiceAmountResolution(amount = rawAmount, status = VoiceParseFieldStatus.NEEDS_CONFIRM, message = "目标余额已识别，账户待确认后再核对差额")
-        val currentBalance = uiState.accounts.firstOrNull { it.account.id == accountId }?.balanceCents
-            ?: return VoiceAmountResolution(amount = rawAmount, status = VoiceParseFieldStatus.NEEDS_CONFIRM, message = "目标余额已识别，当前余额待核对")
-        val targetCents = Money.parseMajorStrict(rawAmount)?.cents
-            ?: return VoiceAmountResolution(amount = rawAmount, status = VoiceParseFieldStatus.NEEDS_CONFIRM, message = "目标余额待确认")
-        return VoiceAmountResolution(
-            amount = (targetCents - currentBalance).toPlainAmount(),
-            status = VoiceParseFieldStatus.NEEDS_CONFIRM,
-            message = "目标余额 $rawAmount，已按当前余额换算差额"
-        )
+        return VoiceAmountResolution(amount = rawAmount)
     }
 
     private fun occurredAt(text: String): VoiceResolved<Long> {
@@ -188,43 +139,22 @@ internal class VoiceEntryParser(
             displayValue = "$date $time"
         )
     }
+
+    private fun extractExplicitNote(text: String): String {
+        val marker = explicitNoteMarkers.firstOrNull { text.contains(it, ignoreCase = true) }
+            ?: return ""
+        return text.substringAfter(marker)
+            .trimStart(' ', '，', ',', '。', ':', '：', '-', '是', '为')
+            .trim()
+    }
 }
 
 internal fun extractVoiceAmount(text: String): String = VoiceEntryParser().extractAmount(text)
 
-private fun missingMatch(): VoiceResolved<AccountEntity?> {
-    return VoiceResolved(
-        value = null,
-        source = VoiceResolutionSource.MISSING,
-        message = "未识别账户，进入记账后请选择"
-    )
-}
-
-private fun amountField(resolution: VoiceAmountResolution): VoiceParseField {
-    return if (resolution.amount.isBlank()) {
-        VoiceParseField("金额", "未识别", VoiceParseFieldStatus.MISSING, resolution.message)
-    } else {
-        VoiceParseField("金额", resolution.amount, resolution.status, resolution.message)
-    }
-}
-
-private fun transactionTypeLabel(type: TransactionType): String = when (type) {
-    TransactionType.EXPENSE -> "支出"
-    TransactionType.INCOME -> "收入"
-    TransactionType.TRANSFER -> "转账"
-    TransactionType.BALANCE_ADJUSTMENT -> "余额调整"
-}
+private val explicitNoteMarkers = listOf("备注一下", "说明一下", "备注是", "备注为", "说明是", "说明为", "备注", "说明")
 
 private fun Long.toVoiceMajorAmount(): String {
     val yuan = this / 100
     val cents = kotlin.math.abs(this % 100)
     return if (cents == 0L) yuan.toString() else "$yuan.${cents.toString().padStart(2, '0').trimEnd('0')}"
-}
-
-private fun Long.toPlainAmount(): String {
-    val sign = if (this < 0) "-" else ""
-    val absolute = kotlin.math.abs(this)
-    val yuan = absolute / 100
-    val cents = absolute % 100
-    return if (cents == 0L) "$sign$yuan" else "$sign$yuan.${cents.toString().padStart(2, '0').trimEnd('0')}"
 }

@@ -84,17 +84,14 @@ class VoiceEntryParserTest {
         assertEquals(2L, result.draft.accountId)
         assertEquals(10L, result.draft.categoryId)
         assertEquals("星巴克", result.draft.merchant)
-        assertEquals(VoiceParseConfidence.MEDIUM, result.confidence)
         assertTrue(result.learnedHint.orEmpty().contains("星巴克"))
-        assertTrue(result.fields.any { it.label == "分类" && it.status == VoiceParseFieldStatus.NEEDS_CONFIRM })
     }
 
     @Test
-    fun marksMissingAmountAsLowConfidence() {
+    fun leavesAmountBlankWhenMissing() {
         val result = parser.parseDetailed("昨天晚上用微信吃烧烤", sampleState())
 
-        assertEquals(VoiceParseConfidence.LOW, result.confidence)
-        assertTrue(result.fields.any { it.label == "金额" && it.status == VoiceParseFieldStatus.MISSING })
+        assertEquals("", result.draft.amount)
     }
 
     @Test
@@ -128,13 +125,10 @@ class VoiceEntryParserTest {
     }
 
     @Test
-    fun parsesBalanceAdjustmentTargetAsDelta() {
-        val result = parser.parseDetailed("支付宝余额调整为230", sampleState())
-
-        assertEquals(TransactionType.BALANCE_ADJUSTMENT, result.draft.type)
-        assertEquals("30", result.draft.amount)
-        assertEquals(1L, result.draft.accountId)
-        assertTrue(result.fields.any { it.label == "金额" && it.status == VoiceParseFieldStatus.NEEDS_CONFIRM })
+    fun keepsRawVoiceTextOutOfNoteUnlessNoteIsExplicit() {
+        assertEquals("", parser.parse("午饭二十八微信", sampleState()).note)
+        assertEquals("", parser.parse("记一下午饭二十八微信", sampleState()).note)
+        assertEquals("和小王一起", parser.parse("午饭二十八微信备注和小王一起", sampleState()).note)
     }
 
     private fun sampleState(includeHistory: Boolean = false): AccountingUiState {

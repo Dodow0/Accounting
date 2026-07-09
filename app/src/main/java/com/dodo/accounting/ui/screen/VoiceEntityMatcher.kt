@@ -90,13 +90,6 @@ internal object VoiceEntityMatcher {
             ("从" in text && transferTargetMarkers.any { it in text })
     }
 
-    fun isBalanceAdjustmentText(text: String): Boolean {
-        return "余额" in text && balanceAdjustmentKeywords.any { it in text }
-    }
-
-    fun isBalanceTargetText(text: String): Boolean {
-        return isBalanceAdjustmentText(text) && balanceTargetKeywords.any { it in text }
-    }
 }
 
 private fun List<AccountEntity>.bestAccountMatch(text: String): VoiceResolved<AccountEntity>? {
@@ -150,8 +143,6 @@ private fun accountVoiceAliases(type: AccountType): List<String> = when (type) {
 
 private val transferVoiceKeywords = listOf("转账", "转到", "转入", "转出", "转给", "转进")
 private val transferTargetMarkers = listOf("转到", "转入", "转给", "转进", "转")
-private val balanceAdjustmentKeywords = listOf("余额调整", "余额校正", "调整余额", "校正余额", "余额修正", "改余额", "余额改", "余额为", "余额到")
-private val balanceTargetKeywords = listOf("调整为", "校正为", "修正为", "改为", "改成", "余额为", "余额到")
 
 private val accountUsageMarkers = listOf("用", "从", "在")
 

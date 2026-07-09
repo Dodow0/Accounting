@@ -423,15 +423,24 @@ internal fun CategoryBudgetHint(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("${category.name}预算", fontWeight = FontWeight.SemiBold, color = tint)
+                Text(
+                    "${category.name}预算",
+                    modifier = Modifier.weight(1f),
+                    fontWeight = FontWeight.SemiBold,
+                    color = tint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 Text(
                     if (budgetCents > 0) "${Money(projectedCents).format()} / ${Money(budgetCents).format()}" else "未设置",
                     color = tint,
                     style = MaterialTheme.typography.labelMedium,
-                    fontFamily = FontFamily.Monospace
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             if (budgetCents > 0) {
@@ -1186,8 +1195,7 @@ internal fun TypeSelector(
     val types = listOf(
         TransactionType.EXPENSE to "支出",
         TransactionType.INCOME to "收入",
-        TransactionType.TRANSFER to "转账",
-        TransactionType.BALANCE_ADJUSTMENT to "校正"
+        TransactionType.TRANSFER to "转账"
     )
     Surface(
         modifier = Modifier.fillMaxWidth(),

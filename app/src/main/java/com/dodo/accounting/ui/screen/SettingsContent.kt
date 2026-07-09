@@ -306,6 +306,9 @@ internal fun MineMenu(
         .firstOrNull { it.id == entryPreferences.defaultAccountId }
         ?.name
         ?: "首个账户"
+    val monthlyBudgetLabel = uiState.monthlyBudget?.amountCents
+        ?.let { Money(it).format() }
+        ?: "未设置"
     val groups = listOf(
         SettingsMenuGroup(
             title = "基础数据",
@@ -336,6 +339,13 @@ internal fun MineMenu(
                     Icons.Default.History,
                     MineRoute.EntryPreferences,
                     if (entryPreferences.commonCategoryFirst || entryPreferences.tagSuggestionsEnabled) "已开启" else "已关闭"
+                ),
+                SettingsMenuEntry(
+                    "预算设置",
+                    "月度总预算与分类预算",
+                    Icons.Default.Assessment,
+                    MineRoute.Budget,
+                    monthlyBudgetLabel
                 )
             )
         ),

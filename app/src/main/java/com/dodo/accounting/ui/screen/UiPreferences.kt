@@ -47,7 +47,7 @@ internal class UiPreferenceStore(context: Context) {
             amountsHidden = preferences.getBoolean(KEY_AMOUNTS_HIDDEN, false),
             themeMode = preferences.getEnum(KEY_THEME_MODE, ThemeMode.LIGHT),
             entryPreferences = EntryPreferences(
-                defaultType = preferences.getEnum(KEY_ENTRY_DEFAULT_TYPE, TransactionType.EXPENSE),
+                defaultType = preferences.getEnum(KEY_ENTRY_DEFAULT_TYPE, TransactionType.EXPENSE).asEntryDefaultType(),
                 defaultAccountId = preferences.getLongOrNull(KEY_ENTRY_DEFAULT_ACCOUNT_ID),
                 useCurrentTime = preferences.getBoolean(KEY_ENTRY_USE_CURRENT_TIME, true),
                 continueAfterSave = preferences.getBoolean(KEY_ENTRY_CONTINUE_AFTER_SAVE, false),
@@ -73,7 +73,7 @@ internal class UiPreferenceStore(context: Context) {
 
     fun saveEntryPreferences(value: EntryPreferences) {
         preferences.edit()
-            .putString(KEY_ENTRY_DEFAULT_TYPE, value.defaultType.name)
+            .putString(KEY_ENTRY_DEFAULT_TYPE, value.defaultType.asEntryDefaultType().name)
             .putLongOrRemove(KEY_ENTRY_DEFAULT_ACCOUNT_ID, value.defaultAccountId)
             .putBoolean(KEY_ENTRY_USE_CURRENT_TIME, value.useCurrentTime)
             .putBoolean(KEY_ENTRY_CONTINUE_AFTER_SAVE, value.continueAfterSave)
@@ -102,6 +102,10 @@ internal class UiPreferenceStore(context: Context) {
 
     private fun SharedPreferences.Editor.putLongOrRemove(key: String, value: Long?): SharedPreferences.Editor {
         return if (value == null) remove(key) else putLong(key, value)
+    }
+
+    private fun TransactionType.asEntryDefaultType(): TransactionType {
+        return if (this == TransactionType.BALANCE_ADJUSTMENT) TransactionType.EXPENSE else this
     }
 
     private companion object {

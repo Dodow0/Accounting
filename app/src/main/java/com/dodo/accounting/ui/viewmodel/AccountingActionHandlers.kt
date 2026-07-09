@@ -103,28 +103,6 @@ internal class TransactionActions(
         )
     }
 
-    fun addBalanceAdjustment(
-        amount: String,
-        accountId: Long?,
-        note: String,
-        tagIds: List<Long> = emptyList(),
-        occurredAt: Long = System.currentTimeMillis()
-    ) {
-        submitDraft(
-            draft = {
-                TransactionDraft(
-                    type = TransactionType.BALANCE_ADJUSTMENT,
-                    amountCents = Money.requireMajorStrict(amount).cents,
-                    occurredAt = occurredAt,
-                    accountId = accountId,
-                    note = note,
-                    tagIds = tagIds
-                )
-            },
-            successMessage = "余额校正已记录"
-        )
-    }
-
     fun startEditTransaction(transaction: TransactionWithDetails) {
         localState.update { it.copy(editingTransaction = transaction) }
     }
@@ -179,9 +157,10 @@ internal class TransactionActions(
             TransactionType.EXPENSE -> "支出已记录"
             TransactionType.INCOME -> "收入已记录"
             TransactionType.TRANSFER -> "转账已记录"
-            TransactionType.BALANCE_ADJUSTMENT -> "余额校正已记录"
+            TransactionType.BALANCE_ADJUSTMENT -> "记录失败"
         }
         return runCatching {
+            require(type != TransactionType.BALANCE_ADJUSTMENT) { "余额校正功能已移除" }
             addTransaction(
                 createDraft(
                     type = type,
