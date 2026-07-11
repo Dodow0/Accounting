@@ -39,7 +39,8 @@ class TransactionRulesTest {
         val draft = TransactionDraft(
             type = TransactionType.EXPENSE,
             amountCents = 1_280,
-            accountId = 7
+            accountId = 7,
+            categoryId = 10
         )
 
         assertEquals(
@@ -47,6 +48,19 @@ class TransactionRulesTest {
             TransactionRules.impacts(draft)
         )
         assertTrue(TransactionRules.countsAsExpense(TransactionType.EXPENSE))
+    }
+
+    @Test
+    fun expenseRequiresCategory() {
+        val draft = TransactionDraft(
+            type = TransactionType.EXPENSE,
+            amountCents = 1_000,
+            accountId = 1
+        )
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            TransactionRules.validate(draft)
+        }
+        assertEquals("请选择分类", error.message)
     }
 
     @Test

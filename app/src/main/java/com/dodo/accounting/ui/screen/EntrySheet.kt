@@ -174,6 +174,8 @@ import com.dodo.accounting.data.local.model.AccountBalanceRow
 import com.dodo.accounting.data.local.model.CategorySummaryRow as CategorySummary
 import com.dodo.accounting.data.local.model.TransactionWithDetails
 import com.dodo.accounting.domain.model.Money
+import com.dodo.accounting.domain.model.TransactionDraft
+import com.dodo.accounting.domain.model.TransactionRules
 import com.dodo.accounting.domain.model.StatsPeriod
 import com.dodo.accounting.domain.model.projectedCategoryBudgetCents
 import com.dodo.accounting.domain.util.handleAmountKey
@@ -1317,22 +1319,14 @@ internal fun validateEntryDraft(
     }
     val cents = Money.parseMajorStrict(amount)?.cents
         ?: return Money.INVALID_AMOUNT_MESSAGE
-    if (cents == 0L || (cents < 0 && type != TransactionType.BALANCE_ADJUSTMENT)) {
-        return "请输入有效金额"
-    }
-    return when (type) {
-        TransactionType.EXPENSE, TransactionType.INCOME -> when {
-            accountId == null -> "请选择账户"
-            categoryId == null -> "请选择分类"
-            else -> null
-        }
-        TransactionType.TRANSFER -> when {
-            fromAccountId == null -> "请选择转出账户"
-            toAccountId == null -> "请选择转入账户"
-            fromAccountId == toAccountId -> "转出账户和转入账户不能相同"
-            else -> null
-        }
-        TransactionType.BALANCE_ADJUSTMENT -> if (accountId == null) "请选择账户" else null
-    }
+    val draft = TransactionDraft(
+        type = type,
+        amountCents = cents,
+        accountId = if (type == TransactionType.TRANSFER) null else accountId,
+        fromAccountId = if (type == TransactionType.TRANSFER) fromAccountId else null,
+        toAccountId = if (type == TransactionType.TRANSFER) toAccountId else null,
+        categoryId = if (type == TransactionType.EXPENSE || type == TransactionType.INCOME) categoryId else null
+    )
+    return TransactionRules.validationError(draft)
 }
 

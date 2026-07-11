@@ -63,11 +63,13 @@ class AccountingRepositoryImplTest {
         val bank = repository.observeActiveAccounts().first().first { it.name == "银行卡" }
         val mealCategory = repository.observeCategories(CategoryKind.EXPENSE).first().first { it.name == "餐饮" }
 
+        val incomeCategory = repository.observeCategories(CategoryKind.INCOME).first().first()
         repository.addTransaction(
             TransactionDraft(
                 type = TransactionType.INCOME,
                 amountCents = 10_000,
-                accountId = cash.id
+                accountId = cash.id,
+                categoryId = incomeCategory.id
             )
         )
         val expenseId = repository.addTransaction(
@@ -103,12 +105,14 @@ class AccountingRepositoryImplTest {
         repository.ensureSeedData()
         val cash = repository.observeActiveAccounts().first().first { it.name == "现金" }
         val bank = repository.observeActiveAccounts().first().first { it.name == "银行卡" }
+        val incomeCategory = repository.observeCategories(CategoryKind.INCOME).first().first()
 
         val incomeId = repository.addTransaction(
             TransactionDraft(
                 type = TransactionType.INCOME,
                 amountCents = 10_000,
-                accountId = cash.id
+                accountId = cash.id,
+                categoryId = incomeCategory.id
             )
         )
         val transferId = repository.addTransaction(
@@ -138,11 +142,14 @@ class AccountingRepositoryImplTest {
     fun jsonPreviewCountsBackupContentAndImportReplacesCurrentData() = runTest {
         repository.ensureSeedData()
         val cash = repository.observeActiveAccounts().first().first { it.name == "现金" }
+        val incomeCategory = repository.observeCategories(CategoryKind.INCOME).first().first()
+        val mealCategory = repository.observeCategories(CategoryKind.EXPENSE).first().first { it.name == "餐饮" }
         repository.addTransaction(
             TransactionDraft(
                 type = TransactionType.INCOME,
                 amountCents = 12_345,
-                accountId = cash.id
+                accountId = cash.id,
+                categoryId = incomeCategory.id
             )
         )
         val exported = repository.exportJson()
@@ -158,7 +165,8 @@ class AccountingRepositoryImplTest {
             TransactionDraft(
                 type = TransactionType.EXPENSE,
                 amountCents = 100,
-                accountId = cash.id
+                accountId = cash.id,
+                categoryId = mealCategory.id
             )
         )
         assertTrue(repository.observeActiveAccounts().first().any { it.name == "临时账户" })
@@ -186,11 +194,15 @@ class AccountingRepositoryImplTest {
     fun deleteAccountWithHistoryArchivesAndPreservesHistoricalAccountName() = runTest {
         val cashId = repository.addAccount(AccountEntity(name = "现金账户"))
         repository.addAccount(AccountEntity(name = "备用账户"))
+        val incomeCategoryId = repository.addCategory(
+            CategoryEntity(name = "工资", kind = CategoryKind.INCOME)
+        )
         repository.addTransaction(
             TransactionDraft(
                 type = TransactionType.INCOME,
                 amountCents = 10_000,
-                accountId = cashId
+                accountId = cashId,
+                categoryId = incomeCategoryId
             )
         )
 
@@ -253,12 +265,16 @@ class AccountingRepositoryImplTest {
     fun archivingAccountDisablesEnabledRecurringRulesForThatAccount() = runTest {
         val cashId = repository.addAccount(AccountEntity(name = "现金账户"))
         repository.addAccount(AccountEntity(name = "备用账户"))
+        val rentCategoryId = repository.addCategory(
+            CategoryEntity(name = "房租", kind = CategoryKind.EXPENSE)
+        )
         repository.addRecurringRule(
             RecurringRuleEntity(
                 name = "房租",
                 transactionType = TransactionType.EXPENSE,
                 amountCents = 3_000_00,
                 accountId = cashId,
+                categoryId = rentCategoryId,
                 nextRunAt = System.currentTimeMillis() + 86_400_000
             )
         )
@@ -274,12 +290,16 @@ class AccountingRepositoryImplTest {
     fun disabledRecurringRuleCannotBeReEnabledWhenAccountIsArchived() = runTest {
         val cashId = repository.addAccount(AccountEntity(name = "现金账户"))
         repository.addAccount(AccountEntity(name = "备用账户"))
+        val rentCategoryId = repository.addCategory(
+            CategoryEntity(name = "房租", kind = CategoryKind.EXPENSE)
+        )
         val ruleId = repository.addRecurringRule(
             RecurringRuleEntity(
                 name = "房租",
                 transactionType = TransactionType.EXPENSE,
                 amountCents = 3_000_00,
                 accountId = cashId,
+                categoryId = rentCategoryId,
                 nextRunAt = System.currentTimeMillis() + 86_400_000
             )
         )
@@ -338,12 +358,16 @@ class AccountingRepositoryImplTest {
             .minusMonths(40)
             .toInstant()
             .toEpochMilli()
+        val rentCategoryId = repository.addCategory(
+            CategoryEntity(name = "房租", kind = CategoryKind.EXPENSE)
+        )
         repository.addRecurringRule(
             RecurringRuleEntity(
                 name = "历史月租",
                 transactionType = TransactionType.EXPENSE,
                 amountCents = 1_000,
                 accountId = accountId,
+                categoryId = rentCategoryId,
                 intervalMonths = 1,
                 nextRunAt = oldRunAt
             )
