@@ -1,5 +1,11 @@
 package com.dodo.accounting.ui.viewmodel
 
+import com.dodo.accounting.ui.viewmodel.actions.BackupActions
+import com.dodo.accounting.ui.viewmodel.actions.BackupUiLocalState
+import com.dodo.accounting.ui.viewmodel.actions.ManagementActions
+import com.dodo.accounting.ui.viewmodel.actions.PlanningActions
+import com.dodo.accounting.ui.viewmodel.actions.TransactionActions
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dodo.accounting.core.time.addMonthsMillis
@@ -18,6 +24,7 @@ import com.dodo.accounting.domain.model.AccountingSummary
 import com.dodo.accounting.domain.model.StatsPeriod
 import com.dodo.accounting.domain.model.BackupPreview
 import com.dodo.accounting.domain.repository.AccountingRepository
+import com.dodo.accounting.domain.repository.BackupRepository
 import com.dodo.accounting.domain.usecase.AddTransactionUseCase
 import com.dodo.accounting.domain.usecase.ExportBackupUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -63,6 +70,7 @@ data class SettingsUiState(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val repository: AccountingRepository,
+    private val backupRepository: BackupRepository,
     private val addTransaction: AddTransactionUseCase,
     private val exportBackup: ExportBackupUseCase,
     private val messenger: UiMessenger
@@ -80,7 +88,7 @@ class SettingsViewModel @Inject constructor(
         ManagementActions(viewModelScope, repository, messenger::show)
     }
     private val backupActions by lazy {
-        BackupActions(viewModelScope, repository, exportBackup, backupLocalState, messenger::show)
+        BackupActions(viewModelScope, backupRepository, exportBackup, backupLocalState, messenger::show)
     }
 
     private val baseData = combine(
