@@ -154,7 +154,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.dodo.accounting.data.local.entity.AccountEntity
-import com.dodo.accounting.data.local.entity.AccountType
 import com.dodo.accounting.data.local.entity.CategoryKind
 import com.dodo.accounting.data.local.entity.CategoryEntity
 import com.dodo.accounting.data.local.entity.RecurringRuleEntity
@@ -1060,6 +1059,13 @@ internal fun AccountManagementPage(
     val activeAccountRows = uiState.accounts.filterNot { it.account.isArchived }
     val archivedAccountRows = uiState.accounts.filter { it.account.isArchived }
     var accountToEdit by remember { mutableStateOf<AccountBalanceRow?>(null) }
+    val reorderState = rememberLongPressReorderState(
+        items = activeAccountRows,
+        keyOf = { it.account.id },
+        onReordered = { reorderedRows ->
+            viewModel.reorderAccounts(reorderedRows.map { it.account.id })
+        }
+    )
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1069,15 +1075,22 @@ internal fun AccountManagementPage(
         item { MineBackHeader("账户管理", onBack) }
         item { AddAccountCard(viewModel) }
         item { SectionHeader("资产账户", "${activeAccountRows.size} 个") }
-        items(activeAccountRows, key = { it.account.id }) { row ->
-            AccountRow(
-                row = row,
-                onClick = { accountToEdit = row },
-                onDelete = { viewModel.deleteAccount(row.account.id) },
-                amountsHidden = amountsHidden,
-                deleteContentDescription = "归档或移除账户",
-                confirmDeleteContentDescription = "确认归档或移除账户"
-            )
+        items(reorderState.items, key = { it.account.id }) { row ->
+            Box(
+                modifier = Modifier.longPressReorderItem(
+                    state = reorderState,
+                    item = row
+                )
+            ) {
+                AccountRow(
+                    row = row,
+                    onClick = { accountToEdit = row },
+                    onDelete = { viewModel.deleteAccount(row.account.id) },
+                    amountsHidden = amountsHidden,
+                    deleteContentDescription = "归档或移除账户",
+                    confirmDeleteContentDescription = "确认归档或移除账户"
+                )
+            }
         }
         if (archivedAccountRows.isNotEmpty()) {
             item { SectionHeader("已归档账户", "${archivedAccountRows.size} 个") }
@@ -1100,11 +1113,10 @@ internal fun AccountManagementPage(
             row = row,
             amountsHidden = amountsHidden,
             onDismiss = { accountToEdit = null },
-            onSave = { name, type, initialBalance, iconName, colorArgb ->
+            onSave = { name, initialBalance, iconName, colorArgb ->
                 viewModel.updateAccount(
                     id = row.account.id,
                     name = name,
-                    type = type,
                     initialBalance = initialBalance,
                     iconName = iconName,
                     colorArgb = colorArgb
@@ -1121,16 +1133,14 @@ private fun AccountEditSheet(
     row: AccountBalanceRow,
     amountsHidden: Boolean,
     onDismiss: () -> Unit,
-    onSave: (String, AccountType, String, String, Long) -> Unit
+    onSave: (String, String, String, Long) -> Unit
 ) {
     var name by remember(row.account.id) { mutableStateOf(row.account.name) }
-    var type by remember(row.account.id) { mutableStateOf(row.account.type) }
     var initialBalance by remember(row.account.id) {
         mutableStateOf(Money(row.account.initialBalanceCents).formatPlain())
     }
     var iconName by remember(row.account.id) { mutableStateOf(row.account.iconName) }
     var colorArgb by remember(row.account.id) { mutableStateOf(row.account.colorArgb) }
-    var iconQuery by remember(row.account.id) { mutableStateOf("") }
     val canSave = name.isNotBlank() && Money.parseMajorStrict(initialBalance) != null
 
     ModalBottomSheet(
@@ -1153,7 +1163,7 @@ private fun AccountEditSheet(
                 }
                 Text("编辑账户", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 TextButton(
-                    onClick = { onSave(name.trim(), type, initialBalance, iconName, colorArgb) },
+                    onClick = { onSave(name.trim(), initialBalance, iconName, colorArgb) },
                     enabled = canSave
                 ) {
                     Text("保存", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
@@ -1176,7 +1186,7 @@ private fun AccountEditSheet(
                         color = Color(colorArgb).copy(alpha = 0.14f)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(accountIcon(iconName, type), contentDescription = null, tint = Color(colorArgb))
+                            Icon(accountIcon(iconName), contentDescription = null, tint = Color(colorArgb))
                         }
                     }
                     Column(modifier = Modifier.weight(1f)) {
@@ -1188,7 +1198,7 @@ private fun AccountEditSheet(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            "${accountTypeLabel(type)} · ${accountIconLabel(iconName)} · ${privacyAmountLabel(row.balanceCents, amountsHidden)}",
+                            "${accountIconLabel(iconName)} · ${privacyAmountLabel(row.balanceCents, amountsHidden)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -1204,19 +1214,6 @@ private fun AccountEditSheet(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
-            Text("账户类型", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                AccountType.entries.forEach { accountType ->
-                    LedgerChoiceChip(
-                        selected = type == accountType,
-                        label = accountTypeLabel(accountType),
-                        onClick = { type = accountType }
-                    )
-                }
-            }
             MinimalInputLine(
                 value = initialBalance,
                 onValueChange = { initialBalance = it },
@@ -1232,9 +1229,7 @@ private fun AccountEditSheet(
             )
             AccountIconPicker(
                 selectedIconName = iconName,
-                query = iconQuery,
                 tint = Color(colorArgb),
-                onQueryChange = { iconQuery = it },
                 onSelected = { iconName = it }
             )
             Text("颜色", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1259,48 +1254,6 @@ private fun AccountEditSheet(
             Spacer(Modifier.height(14.dp))
         }
         Spacer(Modifier.height(14.dp))
-    }
-}
-
-@Composable
-private fun AccountIconPicker(
-    selectedIconName: String,
-    query: String,
-    tint: Color,
-    onQueryChange: (String) -> Unit,
-    onSelected: (String) -> Unit
-) {
-    val options = remember(query) { accountIconOptions(query) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("图标", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        MinimalInputLine(
-            value = query,
-            onValueChange = onQueryChange,
-            placeholder = "搜索图标：钱包、银行卡、交通卡...",
-            modifier = Modifier.fillMaxWidth()
-        )
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            options.forEach { (name, label) ->
-                CategoryEditPill(
-                    selected = selectedIconName == name,
-                    label = label,
-                    icon = accountIcon(name),
-                    tint = tint,
-                    onClick = { onSelected(name) }
-                )
-            }
-        }
-        if (options.isEmpty()) {
-            Text(
-                "没有匹配的图标",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
     }
 }
 

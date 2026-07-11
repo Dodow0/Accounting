@@ -4,7 +4,6 @@ import androidx.room.withTransaction
 import com.dodo.accounting.data.local.AccountingDatabase
 import com.dodo.accounting.data.local.SeedData
 import com.dodo.accounting.data.local.entity.AccountEntity
-import com.dodo.accounting.data.local.entity.AccountType
 import com.dodo.accounting.data.local.entity.BudgetEntity
 import com.dodo.accounting.data.local.entity.BudgetPeriod
 import com.dodo.accounting.data.local.entity.CategoryEntity
@@ -99,7 +98,6 @@ class AccountingRepositoryImpl @Inject constructor(
     override suspend fun updateAccount(
         id: Long,
         name: String,
-        type: AccountType,
         initialBalanceCents: Long,
         iconName: String,
         colorArgb: Long
@@ -110,7 +108,6 @@ class AccountingRepositoryImpl @Inject constructor(
         accountDao.update(
             existing.copy(
                 name = trimmed,
-                type = type,
                 initialBalanceCents = initialBalanceCents,
                 iconName = iconName.ifBlank { existing.iconName },
                 colorArgb = colorArgb,
@@ -181,6 +178,22 @@ class AccountingRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun reorderAccounts(ids: List<Long>) = database.withTransaction {
+        val activeAccounts = accountDao.getActiveAccounts()
+        val requestedIds = ids.distinct()
+        val activeIds = activeAccounts.map { it.id }
+        require(requestedIds.size == ids.size && requestedIds.toSet() == activeIds.toSet()) { "账户排序数据已变化，请重试" }
+
+        val byId = activeAccounts.associateBy { it.id }
+        val now = System.currentTimeMillis()
+        requestedIds.forEachIndexed { index, accountId ->
+            val account = byId.getValue(accountId)
+            if (account.sortOrder != index) {
+                accountDao.update(account.copy(sortOrder = index, updatedAt = now))
+            }
+        }
+    }
+
     override suspend fun addCategory(category: CategoryEntity): Long = database.withTransaction {
         val trimmed = category.name.trim()
         require(trimmed.isNotBlank()) { "分类名称不能为空" }
@@ -235,6 +248,24 @@ class AccountingRepositoryImpl @Inject constructor(
         val now = System.currentTimeMillis()
         categoryDao.update(existing.copy(sortOrder = target.sortOrder, updatedAt = now))
         categoryDao.update(target.copy(sortOrder = existing.sortOrder, updatedAt = now))
+    }
+
+    override suspend fun reorderCategories(ids: List<Long>) = database.withTransaction {
+        if (ids.isEmpty()) return@withTransaction
+        val first = categoryDao.getCategoryById(ids.first()) ?: error("分类不存在")
+        val categories = categoryDao.getActiveCategories(first.kind)
+        val requestedIds = ids.distinct()
+        val activeIds = categories.map { it.id }
+        require(requestedIds.size == ids.size && requestedIds.toSet() == activeIds.toSet()) { "分类排序数据已变化，请重试" }
+
+        val byId = categories.associateBy { it.id }
+        val now = System.currentTimeMillis()
+        requestedIds.forEachIndexed { index, categoryId ->
+            val category = byId.getValue(categoryId)
+            if (category.sortOrder != index) {
+                categoryDao.update(category.copy(sortOrder = index, updatedAt = now))
+            }
+        }
     }
 
     override suspend fun deleteCategory(id: Long) = database.withTransaction {
@@ -377,10 +408,17 @@ class AccountingRepositoryImpl @Inject constructor(
         val trimmed = name.trim()
         require(trimmed.isNotBlank()) { "标签名称不能为空" }
         val existing = tagDao.getTagByName(trimmed)
+        val nextSortOrder = (tagDao.getMaxActiveSortOrder() ?: -1) + 1
         when {
-            existing == null -> tagDao.insert(TagEntity(name = trimmed))
+            existing == null -> tagDao.insert(TagEntity(name = trimmed, sortOrder = nextSortOrder))
             existing.deletedAt != null -> {
-                tagDao.update(existing.copy(deletedAt = null, updatedAt = System.currentTimeMillis()))
+                tagDao.update(
+                    existing.copy(
+                        sortOrder = nextSortOrder,
+                        deletedAt = null,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
                 existing.id
             }
             else -> error("标签已存在")
@@ -394,6 +432,22 @@ class AccountingRepositoryImpl @Inject constructor(
         val sameName = tagDao.getTagByName(trimmed)
         require(sameName == null || sameName.id == id) { "标签名称已存在" }
         tagDao.update(existing.copy(name = trimmed, updatedAt = System.currentTimeMillis()))
+    }
+
+    override suspend fun reorderTags(ids: List<Long>) = database.withTransaction {
+        val tags = tagDao.getTagsSnapshot().filter { it.deletedAt == null }
+        val requestedIds = ids.distinct()
+        val activeIds = tags.map { it.id }
+        require(requestedIds.size == ids.size && requestedIds.toSet() == activeIds.toSet()) { "标签排序数据已变化，请重试" }
+
+        val byId = tags.associateBy { it.id }
+        val now = System.currentTimeMillis()
+        requestedIds.forEachIndexed { index, tagId ->
+            val tag = byId.getValue(tagId)
+            if (tag.sortOrder != index) {
+                tagDao.update(tag.copy(sortOrder = index, updatedAt = now))
+            }
+        }
     }
 
     override suspend fun deleteTag(id: Long) {

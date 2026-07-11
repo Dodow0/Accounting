@@ -156,7 +156,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dodo.accounting.data.local.entity.AccountEntity
-import com.dodo.accounting.data.local.entity.AccountType
 import com.dodo.accounting.data.local.entity.CategoryKind
 import com.dodo.accounting.data.local.entity.CategoryEntity
 import com.dodo.accounting.data.local.entity.RecurringRuleEntity
@@ -1126,7 +1125,7 @@ internal fun AccountRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(row.account.name, style = MaterialTheme.typography.titleSmall)
                 Text(
-                    accountTypeLabel(row.account.type),
+                    accountIconLabel(row.account.iconName),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1172,22 +1171,10 @@ internal fun AccountRow(
 internal fun AddAccountCard(viewModel: AccountingViewModel) {
     var name by remember { mutableStateOf("") }
     var initialBalance by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf(AccountType.CUSTOM) }
+    var iconName by remember { mutableStateOf("account_balance_wallet") }
 
     LedgerCard {
             Text("新增资产账户", style = MaterialTheme.typography.titleMedium)
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                AccountType.entries.forEach { accountType ->
-                    LedgerChoiceChip(
-                        selected = type == accountType,
-                        label = accountTypeLabel(accountType),
-                        onClick = { type = accountType }
-                    )
-                }
-            }
             MinimalInputLine(
                 value = name,
                 onValueChange = { name = it },
@@ -1203,14 +1190,19 @@ internal fun AddAccountCard(viewModel: AccountingViewModel) {
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
             )
+            AccountIconPicker(
+                selectedIconName = iconName,
+                tint = MaterialTheme.colorScheme.primary,
+                onSelected = { iconName = it }
+            )
             LedgerActionButton(
                 label = "添加账户",
                 icon = Icons.Default.Add,
                 onClick = {
-                    viewModel.addAccount(name, type, initialBalance)
+                    viewModel.addAccount(name, initialBalance, iconName)
                     name = ""
                     initialBalance = ""
-                    type = AccountType.CUSTOM
+                    iconName = "account_balance_wallet"
                 },
                 modifier = Modifier.fillMaxWidth()
             )

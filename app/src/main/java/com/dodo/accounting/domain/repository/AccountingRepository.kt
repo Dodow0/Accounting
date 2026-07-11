@@ -1,7 +1,6 @@
 package com.dodo.accounting.domain.repository
 
 import com.dodo.accounting.data.local.entity.AccountEntity
-import com.dodo.accounting.data.local.entity.AccountType
 import com.dodo.accounting.data.local.entity.BudgetEntity
 import com.dodo.accounting.data.local.entity.CategoryEntity
 import com.dodo.accounting.data.local.entity.CategoryKind
@@ -49,17 +48,18 @@ interface AccountingRepository {
     suspend fun updateAccount(
         id: Long,
         name: String,
-        type: AccountType,
         initialBalanceCents: Long,
         iconName: String,
         colorArgb: Long
     )
     suspend fun archiveAccount(id: Long, archived: Boolean): AccountRemovalResult
     suspend fun deleteAccount(id: Long): AccountRemovalResult
+    suspend fun reorderAccounts(ids: List<Long>)
     suspend fun addCategory(category: CategoryEntity): Long
     suspend fun renameCategory(id: Long, name: String)
     suspend fun updateCategory(id: Long, name: String, iconName: String, colorArgb: Long)
     suspend fun moveCategory(id: Long, direction: Int)
+    suspend fun reorderCategories(ids: List<Long>)
     suspend fun deleteCategory(id: Long)
     suspend fun addTransaction(draft: TransactionDraft): Long
     suspend fun updateTransaction(id: Long, draft: TransactionDraft)
@@ -76,6 +76,7 @@ interface AccountingRepository {
     suspend fun generateDueRecurringTransactions(): RecurringGenerationResult
     suspend fun addTag(name: String): Long
     suspend fun renameTag(id: Long, name: String)
+    suspend fun reorderTags(ids: List<Long>)
     suspend fun deleteTag(id: Long)
     suspend fun ensureSeedData()
     suspend fun exportJson(): String

@@ -1,7 +1,6 @@
 package com.dodo.accounting.ui.viewmodel
 
 import com.dodo.accounting.data.local.entity.AccountEntity
-import com.dodo.accounting.data.local.entity.AccountType
 import com.dodo.accounting.data.local.entity.CategoryEntity
 import com.dodo.accounting.data.local.entity.CategoryKind
 import com.dodo.accounting.data.local.entity.RecurringRuleEntity
@@ -384,15 +383,15 @@ internal class ManagementActions(
     private val repository: AccountingRepository,
     private val showMessage: (String) -> Unit
 ) {
-    fun addAccount(name: String, type: AccountType, initialBalance: String) {
+    fun addAccount(name: String, initialBalance: String, iconName: String) {
         scope.launch {
             runCatching {
                 require(name.isNotBlank()) { "账户名称不能为空" }
                 repository.addAccount(
                     AccountEntity(
                         name = name.trim(),
-                        type = type,
-                        initialBalanceCents = Money.requireMajorStrict(initialBalance).cents
+                        initialBalanceCents = Money.requireMajorStrict(initialBalance).cents,
+                        iconName = iconName.ifBlank { "account_balance_wallet" }
                     )
                 )
             }.onSuccess {
@@ -406,7 +405,6 @@ internal class ManagementActions(
     fun updateAccount(
         id: Long,
         name: String,
-        type: AccountType,
         initialBalance: String,
         iconName: String,
         colorArgb: Long
@@ -417,7 +415,6 @@ internal class ManagementActions(
                 repository.updateAccount(
                     id = id,
                     name = name.trim(),
-                    type = type,
                     initialBalanceCents = Money.requireMajorStrict(initialBalance).cents,
                     iconName = iconName,
                     colorArgb = colorArgb
@@ -451,6 +448,13 @@ internal class ManagementActions(
             runCatching { repository.archiveAccount(id, false) }
                 .onSuccess { showMessage(it.toAccountRemovalMessage()) }
                 .onFailure { showMessage(it.message ?: "恢复账户失败") }
+        }
+    }
+
+    fun reorderAccounts(ids: List<Long>) {
+        scope.launch {
+            runCatching { repository.reorderAccounts(ids) }
+                .onFailure { showMessage(it.message ?: "账户排序失败") }
         }
     }
 
@@ -507,6 +511,13 @@ internal class ManagementActions(
         }
     }
 
+    fun reorderCategories(ids: List<Long>) {
+        scope.launch {
+            runCatching { repository.reorderCategories(ids) }
+                .onFailure { showMessage(it.message ?: "分类排序失败") }
+        }
+    }
+
     fun deleteCategory(id: Long) {
         scope.launch {
             runCatching { repository.deleteCategory(id) }
@@ -520,6 +531,13 @@ internal class ManagementActions(
             runCatching { repository.renameTag(id, name) }
                 .onSuccess { showMessage("标签已更新") }
                 .onFailure { showMessage(it.message ?: "更新标签失败") }
+        }
+    }
+
+    fun reorderTags(ids: List<Long>) {
+        scope.launch {
+            runCatching { repository.reorderTags(ids) }
+                .onFailure { showMessage(it.message ?: "标签排序失败") }
         }
     }
 

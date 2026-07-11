@@ -19,7 +19,6 @@ data class AccountEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val uuid: String = UUID.randomUUID().toString(),
     val name: String,
-    val type: AccountType,
     val currencyCode: String = "CNY",
     val initialBalanceCents: Long = 0,
     val isArchived: Boolean = false,

@@ -19,6 +19,7 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -36,6 +37,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
@@ -144,13 +146,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -163,7 +167,10 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
@@ -171,11 +178,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dodo.accounting.data.local.entity.AccountEntity
-import com.dodo.accounting.data.local.entity.AccountType
 import com.dodo.accounting.data.local.entity.CategoryKind
 import com.dodo.accounting.data.local.entity.CategoryEntity
 import com.dodo.accounting.data.local.entity.RecurringRuleEntity
@@ -203,6 +211,8 @@ import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @Composable
 internal fun FullScreenLoading(
@@ -259,6 +269,160 @@ internal fun Modifier.ledgerPressCombinedClickable(
         onClick = onClick,
         onLongClick = onLongClick
     )
+}
+
+internal enum class ReorderDragAxis {
+    Vertical,
+    Horizontal
+}
+
+internal class LongPressReorderState<T>(
+    initialItems: List<T>,
+    private val keyOf: (T) -> Any,
+    private val swapThresholdFraction: Float,
+    private val itemSpacingPx: Int,
+    private val onReordered: (List<T>) -> Unit
+) {
+    var items by mutableStateOf(initialItems)
+        private set
+    var draggingKey by mutableStateOf<Any?>(null)
+        private set
+    private var draggingOffsetPx by mutableStateOf(0f)
+    private var changed by mutableStateOf(false)
+    private val itemSizes = mutableStateMapOf<Any, Int>()
+
+    fun sync(nextItems: List<T>) {
+        if (draggingKey == null && items != nextItems) {
+            items = nextItems
+        }
+    }
+
+    fun updateItemSize(item: T, sizePx: Int) {
+        itemSizes[keyOf(item)] = sizePx
+    }
+
+    fun startDragging(item: T) {
+        draggingKey = keyOf(item)
+        draggingOffsetPx = 0f
+        changed = false
+    }
+
+    fun dragBy(deltaPx: Float) {
+        val key = draggingKey ?: return
+        val fromIndex = items.indexOfFirst { keyOf(it) == key }
+        if (fromIndex == -1) return
+        val stepPx = ((itemSizes[key] ?: 0) + itemSpacingPx).coerceAtLeast(1)
+        val thresholdPx = stepPx * swapThresholdFraction
+
+        draggingOffsetPx += deltaPx
+        while (abs(draggingOffsetPx) >= thresholdPx) {
+            val currentIndex = items.indexOfFirst { keyOf(it) == key }
+            if (currentIndex == -1) return
+
+            val direction = if (draggingOffsetPx > 0f) 1 else -1
+            val targetIndex = (currentIndex + direction).coerceIn(0, items.lastIndex)
+            if (targetIndex == currentIndex) return
+
+            items = items.toMutableList().apply {
+                add(targetIndex, removeAt(currentIndex))
+            }
+            draggingOffsetPx -= direction * stepPx
+            changed = true
+        }
+    }
+
+    fun endDragging() {
+        val reorderedItems = items
+        val shouldSave = changed
+        draggingKey = null
+        draggingOffsetPx = 0f
+        changed = false
+        if (shouldSave) {
+            onReordered(reorderedItems)
+        }
+    }
+
+    fun cancelDragging() {
+        draggingKey = null
+        draggingOffsetPx = 0f
+        changed = false
+    }
+
+    fun itemOffset(item: T): Int =
+        if (keyOf(item) == draggingKey) draggingOffsetPx.roundToInt() else 0
+
+    fun isDragging(item: T): Boolean = keyOf(item) == draggingKey
+}
+
+@Composable
+internal fun <T> rememberLongPressReorderState(
+    items: List<T>,
+    keyOf: (T) -> Any,
+    swapThresholdFraction: Float = 0.5f,
+    itemSpacingPx: Int = 0,
+    onReordered: (List<T>) -> Unit
+): LongPressReorderState<T> {
+    val currentOnReordered = rememberUpdatedState(onReordered)
+    val state = remember {
+        LongPressReorderState(
+            initialItems = items,
+            keyOf = keyOf,
+            swapThresholdFraction = swapThresholdFraction,
+            itemSpacingPx = itemSpacingPx,
+            onReordered = { currentOnReordered.value(it) }
+        )
+    }
+    LaunchedEffect(items) {
+        state.sync(items)
+    }
+    return state
+}
+
+@Composable
+internal fun <T> Modifier.longPressReorderItem(
+    state: LongPressReorderState<T>,
+    item: T,
+    axis: ReorderDragAxis = ReorderDragAxis.Vertical
+): Modifier {
+    val haptic = LocalHapticFeedback.current
+    val offsetPx = state.itemOffset(item)
+    val isDragging = state.isDragging(item)
+    return this
+        .zIndex(if (isDragging) 1f else 0f)
+        .offset {
+            when (axis) {
+                ReorderDragAxis.Vertical -> IntOffset(0, offsetPx)
+                ReorderDragAxis.Horizontal -> IntOffset(offsetPx, 0)
+            }
+        }
+        .onSizeChanged { size ->
+            state.updateItemSize(
+                item = item,
+                sizePx = when (axis) {
+                    ReorderDragAxis.Vertical -> size.height
+                    ReorderDragAxis.Horizontal -> size.width
+                }
+            )
+        }
+        .pointerInput(state, item, axis) {
+            detectDragGesturesAfterLongPress(
+                onDragStart = {
+                    state.startDragging(item)
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                },
+                onDragEnd = { state.endDragging() },
+                onDragCancel = { state.cancelDragging() },
+                onDrag = { change, dragAmount ->
+                    change.consume()
+                    state.dragBy(
+                        when (axis) {
+                            ReorderDragAxis.Vertical -> dragAmount.y
+                            ReorderDragAxis.Horizontal -> dragAmount.x
+                        }
+                    )
+                }
+            )
+        }
 }
 
 @Composable
@@ -510,6 +674,8 @@ internal fun CategoryManagementCard(
 ) {
     var showCreateCategorySheet by remember { mutableStateOf(false) }
     var categoryToEdit by remember { mutableStateOf<CategoryEntity?>(null) }
+    val categoryItemGap = 6.dp
+    val categoryItemGapPx = with(LocalDensity.current) { categoryItemGap.roundToPx() }
 
     LedgerCard {
             SectionHeader("分类管理", "${uiState.categories.size} 类")
@@ -519,22 +685,38 @@ internal fun CategoryManagementCard(
                 onClick = { showCreateCategorySheet = true },
                 modifier = Modifier.fillMaxWidth()
             )
-            uiState.categories.groupBy { it.kind }.forEach { (kind, categories) ->
+            CategoryKind.entries.forEach { kind ->
+                val categories = uiState.categories.filter { it.kind == kind }
+                val reorderState = rememberLongPressReorderState(
+                    items = categories,
+                    keyOf = { it.id },
+                    swapThresholdFraction = 0.58f,
+                    itemSpacingPx = categoryItemGapPx,
+                    onReordered = { reorderedCategories ->
+                        viewModel.reorderCategories(reorderedCategories.map { it.id })
+                    }
+                )
+                if (categories.isEmpty()) return@forEach
                 Text(
                     categoryKindLabel(kind),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    categories.forEachIndexed { index, category ->
-                        CategoryManagementRow(
-                            category = category,
-                            canMoveUp = index > 0,
-                            canMoveDown = index < categories.lastIndex,
-                            onMoveUp = { viewModel.moveCategory(category.id, -1) },
-                            onMoveDown = { viewModel.moveCategory(category.id, 1) },
-                            onEdit = { categoryToEdit = category }
-                        )
+                Column(verticalArrangement = Arrangement.spacedBy(categoryItemGap)) {
+                    reorderState.items.forEach { category ->
+                        key(category.id) {
+                            Box(
+                                modifier = Modifier.longPressReorderItem(
+                                    state = reorderState,
+                                    item = category
+                                )
+                            ) {
+                                CategoryManagementRow(
+                                    category = category,
+                                    onEdit = { categoryToEdit = category }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -576,14 +758,12 @@ private fun CategoryCreateSheet(
     var kind by remember { mutableStateOf(CategoryKind.EXPENSE) }
     var iconName by remember { mutableStateOf("receipt_long") }
     var colorArgb by remember { mutableStateOf(0xFFEA580C) }
-    var iconQuery by remember { mutableStateOf("") }
 
     fun selectKind(nextKind: CategoryKind) {
         if (kind == nextKind) return
         kind = nextKind
         iconName = if (nextKind == CategoryKind.EXPENSE) "receipt_long" else "work"
         colorArgb = if (nextKind == CategoryKind.EXPENSE) 0xFFEA580C else 0xFF16A34A
-        iconQuery = ""
     }
 
     ModalBottomSheet(
@@ -628,50 +808,10 @@ private fun CategoryCreateSheet(
                     )
                 }
             }
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = LedgerCardShape,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-                border = BorderStroke(1.dp, LedgerDivider)
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Surface(
-                        modifier = Modifier.size(42.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(colorArgb).copy(alpha = 0.14f)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(categoryIcon(iconName), contentDescription = null, tint = Color(colorArgb))
-                        }
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            name.ifBlank { "新分类预览" },
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            "${categoryKindLabel(kind)} · ${categoryIconLabel(iconName)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
             CategoryIconPicker(
                 kind = kind,
                 selectedIconName = iconName,
-                query = iconQuery,
                 tint = Color(colorArgb),
-                onQueryChange = { iconQuery = it },
                 onSelected = { iconName = it }
             )
             Text("颜色", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -702,10 +842,6 @@ private fun CategoryCreateSheet(
 @Composable
 internal fun CategoryManagementRow(
     category: CategoryEntity,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
     onEdit: () -> Unit
 ) {
     Row(
@@ -724,39 +860,13 @@ internal fun CategoryManagementRow(
                 Icon(categoryIcon(category.iconName), contentDescription = null, tint = Color(category.colorArgb))
             }
         }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(category.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                "排序 ${category.sortOrder}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontFamily = FontFamily.Monospace
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            IconButton(
-                onClick = onMoveUp,
-                enabled = canMoveUp,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    Icons.Default.ArrowUpward,
-                    contentDescription = "上移分类",
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            IconButton(
-                onClick = onMoveDown,
-                enabled = canMoveDown,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    Icons.Default.ArrowDownward,
-                    contentDescription = "下移分类",
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
+        Text(
+            category.name,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
         IconButton(onClick = onEdit) {
             Icon(Icons.Default.Edit, contentDescription = "编辑分类")
         }
@@ -775,7 +885,6 @@ internal fun CategoryEditDialog(
     var iconName by remember(category.id) { mutableStateOf(category.iconName) }
     var colorArgb by remember(category.id) { mutableStateOf(category.colorArgb) }
     var confirmDelete by remember(category.id) { mutableStateOf(false) }
-    var iconQuery by remember(category.id) { mutableStateOf("") }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -808,9 +917,7 @@ internal fun CategoryEditDialog(
             CategoryIconPicker(
                 kind = category.kind,
                 selectedIconName = iconName,
-                query = iconQuery,
                 tint = Color(colorArgb),
-                onQueryChange = { iconQuery = it },
                 onSelected = { iconName = it }
             )
             Text("颜色", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -858,39 +965,14 @@ internal fun CategoryEditDialog(
 private fun CategoryIconPicker(
     kind: CategoryKind,
     selectedIconName: String,
-    query: String,
     tint: Color,
-    onQueryChange: (String) -> Unit,
     onSelected: (String) -> Unit
 ) {
     val groups = remember(kind) { categoryIconGroups(kind) }
-    val trimmedQuery = query.trim()
-    val visibleGroups = remember(groups, trimmedQuery) {
-        if (trimmedQuery.isBlank()) {
-            groups
-        } else {
-            val normalized = trimmedQuery.lowercase()
-            val matches = groups
-                .flatMap { it.options }
-                .distinctBy { it.name }
-                .filter { option ->
-                    option.name.contains(normalized, ignoreCase = true) ||
-                        option.label.contains(trimmedQuery, ignoreCase = true) ||
-                        option.keywords.any { keyword -> keyword.contains(trimmedQuery, ignoreCase = true) }
-                }
-            listOf(CategoryIconGroup("搜索结果", matches))
-        }
-    }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("图标", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        MinimalInputLine(
-            value = query,
-            onValueChange = onQueryChange,
-            placeholder = "搜索图标：餐饮、交通、医疗、收入...",
-            modifier = Modifier.fillMaxWidth()
-        )
-        visibleGroups.forEach { group ->
+        groups.forEach { group ->
             if (group.options.isNotEmpty()) {
                 Text(
                     group.title,
@@ -912,13 +994,6 @@ private fun CategoryIconPicker(
                     }
                 }
             }
-        }
-        if (visibleGroups.all { it.options.isEmpty() }) {
-            Text(
-                "没有匹配的图标",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
@@ -963,6 +1038,13 @@ internal fun TagManagementCard(
 ) {
     var newTagName by remember { mutableStateOf("") }
     var tagToRename by remember { mutableStateOf<TagEntity?>(null) }
+    val reorderState = rememberLongPressReorderState(
+        items = uiState.tags,
+        keyOf = { it.id },
+        onReordered = { reorderedTags ->
+            viewModel.reorderTags(reorderedTags.map { it.id })
+        }
+    )
 
     LedgerCard {
             SectionHeader("标签管理", "${uiState.tags.size} 个")
@@ -993,12 +1075,20 @@ internal fun TagManagementCard(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                uiState.tags.forEach { tag ->
-                    TagPill(
-                        tag = tag,
-                        onRename = { tagToRename = tag },
-                        onDelete = { viewModel.deleteTag(tag.id) }
-                    )
+                reorderState.items.forEach { tag ->
+                    Box(
+                        modifier = Modifier.longPressReorderItem(
+                            state = reorderState,
+                            item = tag,
+                            axis = ReorderDragAxis.Horizontal
+                        )
+                    ) {
+                        TagPill(
+                            tag = tag,
+                            onRename = { tagToRename = tag },
+                            onDelete = { viewModel.deleteTag(tag.id) }
+                        )
+                    }
                 }
             }
     }
@@ -1384,9 +1474,9 @@ internal fun InfoCard(text: String) {
     }
 }
 
-internal fun accountIcon(account: AccountEntity): ImageVector = accountIcon(account.iconName, account.type)
+internal fun accountIcon(account: AccountEntity): ImageVector = accountIcon(account.iconName)
 
-internal fun accountIcon(iconName: String, fallbackType: AccountType = AccountType.CUSTOM): ImageVector = when (iconName) {
+internal fun accountIcon(iconName: String): ImageVector = when (iconName) {
     "payments" -> Icons.Default.Payments
     "credit_card" -> Icons.Default.CreditCard
     "chat" -> Icons.AutoMirrored.Filled.Chat
@@ -1399,17 +1489,7 @@ internal fun accountIcon(iconName: String, fallbackType: AccountType = AccountTy
     "add_card" -> Icons.Default.AddCard
     "assessment" -> Icons.Default.Assessment
     "business_center" -> Icons.Default.BusinessCenter
-    else -> accountIcon(fallbackType)
-}
-
-internal fun accountIcon(type: AccountType): ImageVector = when (type) {
-    AccountType.CASH -> Icons.Default.Wallet
-    AccountType.BANK_CARD, AccountType.CREDIT -> Icons.Default.CreditCard
-    AccountType.THIRD_PARTY_PAYMENT -> Icons.Default.AccountBalanceWallet
-    AccountType.STORED_VALUE_CARD -> Icons.Default.Wallet
-    AccountType.TRANSIT_CARD -> Icons.Default.DirectionsBus
-    AccountType.DIGITAL_BALANCE -> Icons.Default.AccountBalanceWallet
-    AccountType.CUSTOM -> Icons.Default.Wallet
+    else -> Icons.Default.Wallet
 }
 
 private data class AccountIconOption(
@@ -1452,6 +1532,33 @@ internal fun accountIconLabel(iconName: String): String {
     return allAccountIconOptions()
         .firstOrNull { it.name == iconName }
         ?.label ?: "通用"
+}
+
+@Composable
+internal fun AccountIconPicker(
+    selectedIconName: String,
+    tint: Color,
+    onSelected: (String) -> Unit
+) {
+    val options = remember { accountIconOptions("") }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("图标", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            options.forEach { (name, label) ->
+                CategoryEditPill(
+                    selected = selectedIconName == name,
+                    label = label,
+                    icon = accountIcon(name),
+                    tint = tint,
+                    onClick = { onSelected(name) }
+                )
+            }
+        }
+    }
 }
 
 private data class CategoryIconGroup(
@@ -1509,17 +1616,6 @@ internal fun categoryIcon(iconName: String): ImageVector = when (iconName) {
     "local_shipping" -> Icons.Default.LocalShipping
     "history" -> Icons.Default.History
     else -> Icons.Default.Category
-}
-
-internal fun accountTypeLabel(type: AccountType): String = when (type) {
-    AccountType.CASH -> "现金"
-    AccountType.BANK_CARD -> "银行卡"
-    AccountType.THIRD_PARTY_PAYMENT -> "第三方支付"
-    AccountType.STORED_VALUE_CARD -> "储值卡"
-    AccountType.TRANSIT_CARD -> "公交卡"
-    AccountType.DIGITAL_BALANCE -> "数字余额"
-    AccountType.CREDIT -> "信用账户"
-    AccountType.CUSTOM -> "自定义"
 }
 
 internal fun categoryKindLabel(kind: CategoryKind): String = when (kind) {

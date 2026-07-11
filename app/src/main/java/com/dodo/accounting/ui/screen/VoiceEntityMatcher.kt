@@ -1,7 +1,6 @@
 package com.dodo.accounting.ui.screen
 
 import com.dodo.accounting.data.local.entity.AccountEntity
-import com.dodo.accounting.data.local.entity.AccountType
 import com.dodo.accounting.data.local.entity.CategoryEntity
 import com.dodo.accounting.data.local.entity.TransactionType
 
@@ -118,27 +117,29 @@ private fun AccountEntity.matchScore(text: String): AccountMatchScore {
     if (normalizedName.length >= 2 && text.contains(normalizedName, ignoreCase = true)) {
         return AccountMatchScore(80 + normalizedName.length, VoiceResolutionSource.DIRECT, "识别到账户简称")
     }
-    accountVoiceAliases(type).forEach { alias ->
+    accountVoiceAliases(iconName).forEach { alias ->
         if (text.contains(alias, ignoreCase = true)) {
             return if (name.contains(alias, ignoreCase = true)) {
                 AccountMatchScore(70 + alias.length, VoiceResolutionSource.DIRECT, "识别到账户别名")
             } else {
-                AccountMatchScore(20 + alias.length, VoiceResolutionSource.KEYWORD, "根据账户类型匹配")
+                AccountMatchScore(20 + alias.length, VoiceResolutionSource.KEYWORD, "根据账户图标匹配")
             }
         }
     }
     return AccountMatchScore(0, VoiceResolutionSource.MISSING, "")
 }
 
-private fun accountVoiceAliases(type: AccountType): List<String> = when (type) {
-    AccountType.CASH -> listOf("现金")
-    AccountType.BANK_CARD -> listOf("银行卡", "储蓄卡", "借记卡", "卡里")
-    AccountType.THIRD_PARTY_PAYMENT -> listOf("微信", "支付宝", "支付")
-    AccountType.STORED_VALUE_CARD -> listOf("储值卡")
-    AccountType.TRANSIT_CARD -> listOf("公交卡", "交通卡")
-    AccountType.DIGITAL_BALANCE -> listOf("余额")
-    AccountType.CREDIT -> listOf("信用卡", "花呗", "白条")
-    AccountType.CUSTOM -> emptyList()
+private fun accountVoiceAliases(iconName: String): List<String> = when (iconName) {
+    "payments" -> listOf("现金")
+    "credit_card" -> listOf("银行卡", "储蓄卡", "借记卡", "信用卡", "卡里", "花呗", "白条")
+    "chat" -> listOf("微信", "支付", "转账")
+    "account_balance_wallet", "wallet" -> listOf("钱包", "余额", "支付")
+    "phone_iphone" -> listOf("手机", "余额", "电子")
+    "directions_bus" -> listOf("公交卡", "交通卡", "公交", "地铁")
+    "storefront" -> listOf("储值卡", "会员卡", "门店")
+    "savings" -> listOf("储蓄", "存款", "理财")
+    "business_center" -> listOf("公司", "工作", "报销")
+    else -> emptyList()
 }
 
 private val transferVoiceKeywords = listOf("转账", "转到", "转入", "转出", "转给", "转进")

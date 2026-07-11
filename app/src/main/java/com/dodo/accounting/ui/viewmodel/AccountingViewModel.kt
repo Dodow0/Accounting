@@ -3,7 +3,6 @@ package com.dodo.accounting.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dodo.accounting.data.local.entity.AccountEntity
-import com.dodo.accounting.data.local.entity.AccountType
 import com.dodo.accounting.data.local.entity.BudgetEntity
 import com.dodo.accounting.data.local.entity.CategoryEntity
 import com.dodo.accounting.data.local.entity.CategoryKind
@@ -732,20 +731,18 @@ class AccountingViewModel @Inject constructor(
         occurredAt = occurredAt
     )
 
-    fun addAccount(name: String, type: AccountType, initialBalance: String) =
-        managementActions.addAccount(name, type, initialBalance)
+    fun addAccount(name: String, initialBalance: String, iconName: String) =
+        managementActions.addAccount(name, initialBalance, iconName)
 
     fun updateAccount(
         id: Long,
         name: String,
-        type: AccountType,
         initialBalance: String,
         iconName: String,
         colorArgb: Long
     ) = managementActions.updateAccount(
         id = id,
         name = name,
-        type = type,
         initialBalance = initialBalance,
         iconName = iconName,
         colorArgb = colorArgb
@@ -756,6 +753,8 @@ class AccountingViewModel @Inject constructor(
     fun restoreAccount(accountId: Long) = managementActions.restoreAccount(accountId)
 
     fun deleteAccount(accountId: Long) = managementActions.deleteAccount(accountId)
+
+    fun reorderAccounts(ids: List<Long>) = managementActions.reorderAccounts(ids)
 
     fun deleteTransaction(transactionId: Long) = transactionActions.deleteTransaction(transactionId)
 
@@ -817,9 +816,13 @@ class AccountingViewModel @Inject constructor(
 
     fun moveCategory(id: Long, direction: Int) = managementActions.moveCategory(id, direction)
 
+    fun reorderCategories(ids: List<Long>) = managementActions.reorderCategories(ids)
+
     fun deleteCategory(id: Long) = managementActions.deleteCategory(id)
 
     fun renameTag(id: Long, name: String) = managementActions.renameTag(id, name)
+
+    fun reorderTags(ids: List<Long>) = managementActions.reorderTags(ids)
 
     fun deleteTag(id: Long) = managementActions.deleteTag(id)
 

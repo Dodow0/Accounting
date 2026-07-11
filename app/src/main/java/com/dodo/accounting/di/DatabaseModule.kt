@@ -23,7 +23,10 @@ object DatabaseModule {
             context,
             AccountingDatabase::class.java,
             "accounting.db"
-        ).build()
+        )
+            .addMigrations(AccountingDatabase.MIGRATION_1_2)
+            .addMigrations(AccountingDatabase.MIGRATION_2_3)
+            .build()
     }
 }
 

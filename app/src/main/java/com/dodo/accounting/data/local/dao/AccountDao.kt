@@ -45,6 +45,9 @@ interface AccountDao {
     @Query("SELECT * FROM accounts WHERE id = :id")
     suspend fun getAccount(id: Long): AccountEntity?
 
+    @Query("SELECT * FROM accounts WHERE deletedAt IS NULL AND isArchived = 0 ORDER BY sortOrder ASC, createdAt ASC")
+    suspend fun getActiveAccounts(): List<AccountEntity>
+
     @Query("SELECT COUNT(*) FROM accounts WHERE deletedAt IS NULL")
     suspend fun countActiveAccounts(): Int
 

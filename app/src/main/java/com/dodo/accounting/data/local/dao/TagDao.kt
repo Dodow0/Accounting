@@ -10,10 +10,10 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TagDao {
-    @Query("SELECT * FROM tags WHERE deletedAt IS NULL ORDER BY name ASC")
+    @Query("SELECT * FROM tags WHERE deletedAt IS NULL ORDER BY sortOrder ASC, createdAt ASC, name ASC")
     fun observeTags(): Flow<List<TagEntity>>
 
-    @Query("SELECT * FROM tags ORDER BY name ASC")
+    @Query("SELECT * FROM tags ORDER BY sortOrder ASC, createdAt ASC, name ASC")
     suspend fun getTagsSnapshot(): List<TagEntity>
 
     @Query("SELECT * FROM tags WHERE name = :name LIMIT 1")
@@ -24,6 +24,9 @@ interface TagDao {
 
     @Query("SELECT COUNT(*) FROM tags WHERE deletedAt IS NULL")
     suspend fun countActiveTags(): Int
+
+    @Query("SELECT MAX(sortOrder) FROM tags WHERE deletedAt IS NULL")
+    suspend fun getMaxActiveSortOrder(): Int?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(tag: TagEntity): Long
