@@ -1,5 +1,8 @@
 package com.dodo.accounting.ui.screen
 
+import com.dodo.accounting.data.prefs.ThemeMode
+import com.dodo.accounting.data.prefs.UiPreferenceStore
+
 import android.Manifest
 import android.content.Context
 import android.content.Intent

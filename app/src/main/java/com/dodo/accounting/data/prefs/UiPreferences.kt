@@ -1,4 +1,4 @@
-package com.dodo.accounting.ui.screen
+package com.dodo.accounting.data.prefs
 
 import android.content.Context
 import android.content.SharedPreferences

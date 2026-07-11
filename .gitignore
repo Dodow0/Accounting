@@ -28,6 +28,8 @@ dist/
 *.aar
 *.jks
 *.keystore
+app/release/
+generateAPK
 
 # Logs
 *.log

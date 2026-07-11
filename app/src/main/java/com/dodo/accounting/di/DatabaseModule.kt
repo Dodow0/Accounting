@@ -2,9 +2,11 @@ package com.dodo.accounting.di
 
 import android.content.Context
 import androidx.room.Room
+import com.dodo.accounting.data.backup.BackupRepositoryImpl
 import com.dodo.accounting.data.local.AccountingDatabase
 import com.dodo.accounting.data.repository.AccountingRepositoryImpl
 import com.dodo.accounting.domain.repository.AccountingRepository
+import com.dodo.accounting.domain.repository.BackupRepository
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -38,4 +40,10 @@ abstract class RepositoryModule {
     abstract fun bindAccountingRepository(
         impl: AccountingRepositoryImpl
     ): AccountingRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindBackupRepository(
+        impl: BackupRepositoryImpl
+    ): BackupRepository
 }

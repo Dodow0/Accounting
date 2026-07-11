@@ -1,11 +1,11 @@
 package com.dodo.accounting.domain.usecase
 
-import com.dodo.accounting.domain.repository.AccountingRepository
+import com.dodo.accounting.domain.repository.BackupRepository
 import javax.inject.Inject
 
 class ExportBackupUseCase @Inject constructor(
-    private val repository: AccountingRepository
+    private val backupRepository: BackupRepository
 ) {
-    suspend fun json(): String = repository.exportJson()
-    suspend fun csv(): String = repository.exportCsv()
+    suspend fun json(): String = backupRepository.exportJson()
+    suspend fun csv(): String = backupRepository.exportCsv()
 }

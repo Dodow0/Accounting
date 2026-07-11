@@ -1,58 +1,46 @@
 package com.dodo.accounting.data.repository
 
-import androidx.room.withTransaction
 import com.dodo.accounting.data.local.AccountingDatabase
-import com.dodo.accounting.data.local.SeedData
 import com.dodo.accounting.data.local.entity.AccountEntity
-import com.dodo.accounting.data.local.entity.BudgetEntity
-import com.dodo.accounting.data.local.entity.BudgetPeriod
 import com.dodo.accounting.data.local.entity.CategoryEntity
 import com.dodo.accounting.data.local.entity.CategoryKind
 import com.dodo.accounting.data.local.entity.RecurringRuleEntity
-import com.dodo.accounting.data.local.entity.TagEntity
-import com.dodo.accounting.data.local.entity.TransactionEntity
-import com.dodo.accounting.data.local.entity.TransactionSource
-import com.dodo.accounting.data.local.entity.TransactionTagCrossRef
 import com.dodo.accounting.data.local.entity.TransactionType
-import com.dodo.accounting.data.local.model.AccountBalanceRow
-import com.dodo.accounting.data.local.model.CategorySummaryRow
-import com.dodo.accounting.data.local.model.PeriodSummaryRow
-import com.dodo.accounting.data.local.model.TransactionWithDetails
-import com.dodo.accounting.data.local.model.TrendSummaryRow
-import com.dodo.accounting.domain.model.AccountRemovalAction
+import com.dodo.accounting.data.repository.parts.AccountRepositoryOps
+import com.dodo.accounting.data.repository.parts.CatalogRepositoryOps
+import com.dodo.accounting.data.repository.parts.PlanningRepositoryOps
+import com.dodo.accounting.data.repository.parts.TransactionRepositoryOps
 import com.dodo.accounting.domain.model.AccountRemovalResult
 import com.dodo.accounting.domain.model.BackupPreview
 import com.dodo.accounting.domain.model.RecurringGenerationResult
 import com.dodo.accounting.domain.model.TransactionDraft
-import com.dodo.accounting.domain.model.TransactionRules
 import com.dodo.accounting.domain.repository.AccountingRepository
-import java.time.Instant
-import java.time.ZoneId
-import kotlinx.coroutines.flow.Flow
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
+import com.dodo.accounting.domain.repository.BackupRepository
 import javax.inject.Inject
+import javax.inject.Singleton
 
+/**
+ * Facade over aggregate repository operations. Prefer injecting [BackupRepository]
+ * (or future aggregate interfaces) for new code; this type preserves existing call sites.
+ */
+@Singleton
 class AccountingRepositoryImpl @Inject constructor(
-    private val database: AccountingDatabase
+    database: AccountingDatabase,
+    private val backupRepository: BackupRepository
 ) : AccountingRepository {
-    private val accountDao = database.accountDao()
-    private val categoryDao = database.categoryDao()
-    private val tagDao = database.tagDao()
-    private val transactionDao = database.transactionDao()
-    private val budgetDao = database.budgetDao()
-    private val recurringRuleDao = database.recurringRuleDao()
+    private val accounts = AccountRepositoryOps(database)
+    private val catalog = CatalogRepositoryOps(database)
+    private val transactions = TransactionRepositoryOps(database)
+    private val planning = PlanningRepositoryOps(database, transactions)
 
-    override fun observeAccountBalances(): Flow<List<AccountBalanceRow>> = accountDao.observeAccountBalances()
-    override fun observeAccounts(): Flow<List<AccountEntity>> = accountDao.observeAccounts()
-    override fun observeActiveAccounts(): Flow<List<AccountEntity>> = accountDao.observeActiveAccounts()
-    override fun observeCategories(): Flow<List<CategoryEntity>> = categoryDao.observeCategories()
-    override fun observeCategories(kind: CategoryKind): Flow<List<CategoryEntity>> = categoryDao.observeCategories(kind)
-    override fun observeTags(): Flow<List<TagEntity>> = tagDao.observeTags()
-    override fun observeRecentTransactions(limit: Int): Flow<List<TransactionWithDetails>> = transactionDao.observeRecent(limit)
-    override fun observeActiveTransactionCount(): Flow<Int> = transactionDao.observeActiveCount()
+    override fun observeAccountBalances() = accounts.observeAccountBalances()
+    override fun observeAccounts() = accounts.observeAccounts()
+    override fun observeActiveAccounts() = accounts.observeActiveAccounts()
+    override fun observeCategories() = catalog.observeCategories()
+    override fun observeCategories(kind: CategoryKind) = catalog.observeCategories(kind)
+    override fun observeTags() = catalog.observeTags()
+    override fun observeRecentTransactions(limit: Int) = transactions.observeRecentTransactions(limit)
+    override fun observeActiveTransactionCount() = transactions.observeActiveTransactionCount()
     override fun searchTransactions(
         query: String,
         type: TransactionType?,
@@ -61,595 +49,60 @@ class AccountingRepositoryImpl @Inject constructor(
         endAt: Long?,
         limit: Int,
         offset: Int
-    ): Flow<List<TransactionWithDetails>> = transactionDao.search(query, type, accountId, startAt, endAt, limit, offset)
+    ) = transactions.searchTransactions(query, type, accountId, startAt, endAt, limit, offset)
+    override fun observeTrash(limit: Int) = transactions.observeTrash(limit)
+    override fun observePeriodSummary(startAt: Long, endAt: Long) = transactions.observePeriodSummary(startAt, endAt)
+    override fun observeExpenseByCategory(startAt: Long, endAt: Long) = transactions.observeExpenseByCategory(startAt, endAt)
+    override fun observeMonthlyTrend(startAt: Long, endAt: Long) = transactions.observeMonthlyTrend(startAt, endAt)
+    override fun observeActiveBudgets() = planning.observeActiveBudgets()
+    override fun observeMonthlyBudget() = planning.observeMonthlyBudget()
+    override fun observeRecurringRules() = planning.observeRecurringRules()
 
-    override fun observeTrash(limit: Int): Flow<List<TransactionWithDetails>> = transactionDao.observeTrash(limit)
-    override fun observePeriodSummary(startAt: Long, endAt: Long): Flow<PeriodSummaryRow> =
-        transactionDao.observePeriodSummary(startAt, endAt)
-
-    override fun observeExpenseByCategory(startAt: Long, endAt: Long): Flow<List<CategorySummaryRow>> =
-        transactionDao.observeExpenseByCategory(startAt, endAt)
-
-    override fun observeMonthlyTrend(startAt: Long, endAt: Long): Flow<List<TrendSummaryRow>> =
-        transactionDao.observeMonthlyTrend(startAt, endAt)
-
-    override fun observeActiveBudgets(): Flow<List<BudgetEntity>> =
-        budgetDao.observeActiveBudgets()
-
-    override fun observeMonthlyBudget(): Flow<BudgetEntity?> =
-        budgetDao.observeTotalBudget(BudgetPeriod.MONTHLY)
-
-    override fun observeRecurringRules(): Flow<List<RecurringRuleEntity>> =
-        recurringRuleDao.observeRules()
-
-    override suspend fun addAccount(account: AccountEntity): Long = database.withTransaction {
-        val trimmed = account.name.trim()
-        require(trimmed.isNotBlank()) { "账户名称不能为空" }
-        val nextSortOrder = (accountDao.getMaxActiveSortOrder() ?: -1) + 1
-        accountDao.insert(
-            account.copy(
-                name = trimmed,
-                sortOrder = nextSortOrder,
-                updatedAt = System.currentTimeMillis()
-            )
-        )
-    }
-
+    override suspend fun addAccount(account: AccountEntity) = accounts.addAccount(account)
     override suspend fun updateAccount(
         id: Long,
         name: String,
         initialBalanceCents: Long,
         iconName: String,
         colorArgb: Long
-    ) = database.withTransaction {
-        val trimmed = name.trim()
-        require(trimmed.isNotBlank()) { "账户名称不能为空" }
-        val existing = accountDao.getAccount(id)?.takeIf { it.deletedAt == null } ?: error("账户不存在")
-        accountDao.update(
-            existing.copy(
-                name = trimmed,
-                initialBalanceCents = initialBalanceCents,
-                iconName = iconName.ifBlank { existing.iconName },
-                colorArgb = colorArgb,
-                updatedAt = System.currentTimeMillis()
-            )
-        )
-    }
+    ) = accounts.updateAccount(id, name, initialBalanceCents, iconName, colorArgb)
+    override suspend fun archiveAccount(id: Long, archived: Boolean) = accounts.archiveAccount(id, archived)
+    override suspend fun deleteAccount(id: Long) = accounts.deleteAccount(id)
+    override suspend fun reorderAccounts(ids: List<Long>) = accounts.reorderAccounts(ids)
 
-    override suspend fun archiveAccount(id: Long, archived: Boolean): AccountRemovalResult = database.withTransaction {
-        val existing = accountDao.getAccount(id) ?: error("账户不存在")
-        if (existing.deletedAt != null) {
-            return@withTransaction AccountRemovalResult(AccountRemovalAction.UNCHANGED)
-        }
-        if (existing.isArchived == archived) {
-            val disabledRules = if (archived) {
-                recurringRuleDao.disableRulesForAccount(id)
-            } else {
-                0
-            }
-            return@withTransaction AccountRemovalResult(
-                action = if (archived) AccountRemovalAction.ARCHIVED else AccountRemovalAction.RESTORED,
-                disabledRecurringRuleCount = disabledRules
-            )
-        }
-        if (archived) {
-            require(accountDao.countAvailableAccounts() > 1) { "至少保留一个可用账户" }
-        }
-        val now = System.currentTimeMillis()
-        accountDao.setArchived(id, archived, now)
-        val disabledRules = if (archived) {
-            recurringRuleDao.disableRulesForAccount(id, now)
-        } else {
-            0
-        }
-        AccountRemovalResult(
-            action = if (archived) AccountRemovalAction.ARCHIVED else AccountRemovalAction.RESTORED,
-            disabledRecurringRuleCount = disabledRules
-        )
-    }
+    override suspend fun addCategory(category: CategoryEntity) = catalog.addCategory(category)
+    override suspend fun renameCategory(id: Long, name: String) = catalog.renameCategory(id, name)
+    override suspend fun updateCategory(id: Long, name: String, iconName: String, colorArgb: Long) =
+        catalog.updateCategory(id, name, iconName, colorArgb)
+    override suspend fun moveCategory(id: Long, direction: Int) = catalog.moveCategory(id, direction)
+    override suspend fun reorderCategories(ids: List<Long>) = catalog.reorderCategories(ids)
+    override suspend fun deleteCategory(id: Long) = catalog.deleteCategory(id)
 
-    override suspend fun deleteAccount(id: Long): AccountRemovalResult = database.withTransaction {
-        val existing = accountDao.getAccount(id) ?: error("账户不存在")
-        if (existing.deletedAt != null) {
-            return@withTransaction AccountRemovalResult(AccountRemovalAction.UNCHANGED)
-        }
-        val availableAccountCount = accountDao.countAvailableAccounts()
-        if (existing.isArchived) {
-            require(availableAccountCount >= 1) { "至少保留一个可用账户" }
-        } else {
-            require(availableAccountCount > 1) { "至少保留一个可用账户" }
-        }
+    override suspend fun addTransaction(draft: TransactionDraft) = transactions.addTransaction(draft)
+    override suspend fun updateTransaction(id: Long, draft: TransactionDraft) = transactions.updateTransaction(id, draft)
+    override suspend fun softDeleteTransaction(id: Long) = transactions.softDeleteTransaction(id)
+    override suspend fun softDeleteAllTransactions() = transactions.softDeleteAllTransactions()
+    override suspend fun restoreTransaction(id: Long) = transactions.restoreTransaction(id)
+    override suspend fun permanentlyDeleteTransaction(id: Long) = transactions.permanentlyDeleteTransaction(id)
+    override suspend fun clearTrash() = transactions.clearTrash()
 
-        val now = System.currentTimeMillis()
-        val disabledRules = recurringRuleDao.disableRulesForAccount(id, now)
-        val hasHistory = transactionDao.countReferencingAccount(id) > 0
-        if (hasHistory) {
-            accountDao.setArchived(id, true, now)
-            AccountRemovalResult(
-                action = AccountRemovalAction.ARCHIVED,
-                disabledRecurringRuleCount = disabledRules
-            )
-        } else {
-            accountDao.softDelete(id, now)
-            AccountRemovalResult(
-                action = AccountRemovalAction.DELETED,
-                disabledRecurringRuleCount = disabledRules
-            )
-        }
-    }
+    override suspend fun setMonthlyBudget(amountCents: Long) = planning.setMonthlyBudget(amountCents)
+    override suspend fun setCategoryBudget(categoryId: Long, categoryName: String, amountCents: Long) =
+        planning.setCategoryBudget(categoryId, categoryName, amountCents)
+    override suspend fun addRecurringRule(rule: RecurringRuleEntity) = planning.addRecurringRule(rule)
+    override suspend fun setRecurringRuleEnabled(id: Long, enabled: Boolean) = planning.setRecurringRuleEnabled(id, enabled)
+    override suspend fun deleteRecurringRule(id: Long) = planning.deleteRecurringRule(id)
+    override suspend fun generateDueRecurringTransactions() = planning.generateDueRecurringTransactions()
 
-    override suspend fun reorderAccounts(ids: List<Long>) = database.withTransaction {
-        val activeAccounts = accountDao.getActiveAccounts()
-        val requestedIds = ids.distinct()
-        val activeIds = activeAccounts.map { it.id }
-        require(requestedIds.size == ids.size && requestedIds.toSet() == activeIds.toSet()) { "账户排序数据已变化，请重试" }
+    override suspend fun addTag(name: String) = catalog.addTag(name)
+    override suspend fun renameTag(id: Long, name: String) = catalog.renameTag(id, name)
+    override suspend fun reorderTags(ids: List<Long>) = catalog.reorderTags(ids)
+    override suspend fun deleteTag(id: Long) = catalog.deleteTag(id)
 
-        val byId = activeAccounts.associateBy { it.id }
-        val now = System.currentTimeMillis()
-        requestedIds.forEachIndexed { index, accountId ->
-            val account = byId.getValue(accountId)
-            if (account.sortOrder != index) {
-                accountDao.update(account.copy(sortOrder = index, updatedAt = now))
-            }
-        }
-    }
+    override suspend fun ensureSeedData() = planning.ensureSeedData()
 
-    override suspend fun addCategory(category: CategoryEntity): Long = database.withTransaction {
-        val trimmed = category.name.trim()
-        require(trimmed.isNotBlank()) { "分类名称不能为空" }
-        val existing = categoryDao.getActiveCategoryByName(trimmed, category.kind)
-        require(existing == null) { "分类已存在" }
-        val nextSortOrder = (categoryDao.getActiveCategories(category.kind).maxOfOrNull { it.sortOrder } ?: -1) + 1
-        categoryDao.insert(
-            category.copy(
-                name = trimmed,
-                sortOrder = nextSortOrder,
-                updatedAt = System.currentTimeMillis()
-            )
-        )
-    }
-
-    override suspend fun renameCategory(id: Long, name: String) = database.withTransaction {
-        val trimmed = name.trim()
-        require(trimmed.isNotBlank()) { "分类名称不能为空" }
-        val existing = categoryDao.getCategoryById(id) ?: error("分类不存在")
-        val sameName = categoryDao.getActiveCategoryByName(trimmed, existing.kind)
-        require(sameName == null || sameName.id == id) { "分类名称已存在" }
-        categoryDao.update(existing.copy(name = trimmed, updatedAt = System.currentTimeMillis()))
-    }
-
-    override suspend fun updateCategory(id: Long, name: String, iconName: String, colorArgb: Long) = database.withTransaction {
-        val trimmed = name.trim()
-        require(trimmed.isNotBlank()) { "分类名称不能为空" }
-        val existing = categoryDao.getCategoryById(id) ?: error("分类不存在")
-        val sameName = categoryDao.getActiveCategoryByName(trimmed, existing.kind)
-        require(sameName == null || sameName.id == id) { "分类名称已存在" }
-        categoryDao.update(
-            existing.copy(
-                name = trimmed,
-                iconName = iconName.ifBlank { existing.iconName },
-                colorArgb = colorArgb,
-                updatedAt = System.currentTimeMillis()
-            )
-        )
-    }
-
-    override suspend fun moveCategory(id: Long, direction: Int) = database.withTransaction {
-        val existing = categoryDao.getCategoryById(id) ?: error("分类不存在")
-        val categories = categoryDao.getActiveCategories(existing.kind)
-        val currentIndex = categories.indexOfFirst { it.id == id }
-        if (currentIndex == -1) return@withTransaction
-
-        val targetIndex = (currentIndex + direction.coerceIn(-1, 1))
-            .coerceIn(0, categories.lastIndex)
-        if (targetIndex == currentIndex) return@withTransaction
-
-        val target = categories[targetIndex]
-        val now = System.currentTimeMillis()
-        categoryDao.update(existing.copy(sortOrder = target.sortOrder, updatedAt = now))
-        categoryDao.update(target.copy(sortOrder = existing.sortOrder, updatedAt = now))
-    }
-
-    override suspend fun reorderCategories(ids: List<Long>) = database.withTransaction {
-        if (ids.isEmpty()) return@withTransaction
-        val first = categoryDao.getCategoryById(ids.first()) ?: error("分类不存在")
-        val categories = categoryDao.getActiveCategories(first.kind)
-        val requestedIds = ids.distinct()
-        val activeIds = categories.map { it.id }
-        require(requestedIds.size == ids.size && requestedIds.toSet() == activeIds.toSet()) { "分类排序数据已变化，请重试" }
-
-        val byId = categories.associateBy { it.id }
-        val now = System.currentTimeMillis()
-        requestedIds.forEachIndexed { index, categoryId ->
-            val category = byId.getValue(categoryId)
-            if (category.sortOrder != index) {
-                categoryDao.update(category.copy(sortOrder = index, updatedAt = now))
-            }
-        }
-    }
-
-    override suspend fun deleteCategory(id: Long) = database.withTransaction {
-        val existing = categoryDao.getCategoryById(id) ?: error("分类不存在")
-        if (existing.deletedAt != null) return@withTransaction
-        val now = System.currentTimeMillis()
-        transactionDao.clearCategoryReferences(id, now)
-        budgetDao.archiveBudgetsForCategory(id, now)
-        recurringRuleDao.clearCategoryReferences(id, now)
-        categoryDao.softDelete(id, now)
-    }
-
-    override suspend fun addTransaction(draft: TransactionDraft): Long = database.withTransaction {
-        insertTransaction(draft)
-    }
-
-    override suspend fun updateTransaction(id: Long, draft: TransactionDraft) = database.withTransaction {
-        TransactionRules.validate(draft)
-        val existing = transactionDao.getTransactionWithDetails(id)?.transaction
-            ?: error("流水不存在")
-        val now = System.currentTimeMillis()
-        transactionDao.update(
-            existing.copy(
-                type = draft.type,
-                amountCents = draft.amountCents,
-                occurredAt = draft.occurredAt,
-                accountId = draft.accountId,
-                fromAccountId = draft.fromAccountId,
-                toAccountId = draft.toAccountId,
-                categoryId = draft.categoryId,
-                merchant = draft.merchant.trim(),
-                note = draft.note.trim(),
-                updatedAt = now
-            )
-        )
-        replaceTagRefs(id, draft.tagIds)
-    }
-
-    override suspend fun softDeleteTransaction(id: Long) {
-        transactionDao.softDelete(id)
-    }
-
-    override suspend fun softDeleteAllTransactions(): Int = database.withTransaction {
-        transactionDao.softDeleteAllActive()
-    }
-
-    override suspend fun restoreTransaction(id: Long) {
-        transactionDao.restore(id)
-    }
-
-    override suspend fun permanentlyDeleteTransaction(id: Long) {
-        transactionDao.permanentlyDelete(id)
-    }
-
-    override suspend fun clearTrash() = database.withTransaction {
-        transactionDao.permanentlyDeleteTrash()
-    }
-
-    override suspend fun setMonthlyBudget(amountCents: Long): Long = database.withTransaction {
-        require(amountCents > 0) { "预算金额必须大于 0" }
-        budgetDao.archiveTotalBudgets(BudgetPeriod.MONTHLY)
-        budgetDao.insert(
-            BudgetEntity(
-                name = "月度总预算",
-                period = BudgetPeriod.MONTHLY,
-                amountCents = amountCents
-            )
-        )
-    }
-
-    override suspend fun setCategoryBudget(categoryId: Long, categoryName: String, amountCents: Long): Long = database.withTransaction {
-        require(amountCents > 0) { "分类预算金额必须大于 0" }
-        budgetDao.archiveCategoryBudgets(categoryId, BudgetPeriod.MONTHLY)
-        budgetDao.insert(
-            BudgetEntity(
-                name = "${categoryName.trim().ifBlank { "分类" }}预算",
-                period = BudgetPeriod.MONTHLY,
-                amountCents = amountCents,
-                categoryId = categoryId
-            )
-        )
-    }
-
-    override suspend fun addRecurringRule(rule: RecurringRuleEntity): Long = database.withTransaction {
-        require(rule.name.isNotBlank()) { "周期账单名称不能为空" }
-        require(rule.intervalMonths > 0) { "周期月数必须大于 0" }
-        TransactionRules.validate(rule.toDraft(rule.nextRunAt))
-        requireRuleAccountsAvailable(rule)
-        recurringRuleDao.insert(
-            rule.copy(
-                name = rule.name.trim(),
-                merchant = rule.merchant.trim(),
-                note = rule.note.trim(),
-                intervalMonths = rule.intervalMonths.coerceAtLeast(1),
-                updatedAt = System.currentTimeMillis()
-            )
-        )
-    }
-
-    override suspend fun setRecurringRuleEnabled(id: Long, enabled: Boolean) = database.withTransaction {
-        if (enabled) {
-            val rule = recurringRuleDao.getRule(id) ?: error("周期规则不存在")
-            requireRuleAccountsAvailable(rule)
-        }
-        recurringRuleDao.setEnabled(id, enabled)
-    }
-
-    override suspend fun deleteRecurringRule(id: Long) {
-        recurringRuleDao.softDelete(id)
-    }
-
-    override suspend fun generateDueRecurringTransactions(): RecurringGenerationResult = database.withTransaction {
-        val now = System.currentTimeMillis()
-        var generated = 0
-        var skipped = 0
-        recurringRuleDao.getDueRules(now).forEach { rule ->
-            if (!rule.toDraft(rule.nextRunAt).isValid() || !rule.hasAvailableAccounts()) {
-                recurringRuleDao.update(rule.copy(isEnabled = false, updatedAt = now))
-                return@forEach
-            }
-
-            var nextRunAt = rule.nextRunAt
-            var generatedForRule = 0
-            while (nextRunAt <= now && generatedForRule < MAX_RECURRING_RUNS_PER_RULE) {
-                insertTransaction(rule.toDraft(nextRunAt))
-                nextRunAt = nextRunAt.advanceByMonths(rule.intervalMonths)
-                generated += 1
-                generatedForRule += 1
-            }
-            while (nextRunAt <= now) {
-                nextRunAt = nextRunAt.advanceByMonths(rule.intervalMonths)
-                skipped += 1
-            }
-            recurringRuleDao.update(rule.copy(nextRunAt = nextRunAt, updatedAt = now))
-        }
-        RecurringGenerationResult(generatedCount = generated, skippedCount = skipped)
-    }
-
-    override suspend fun addTag(name: String): Long = database.withTransaction {
-        val trimmed = name.trim()
-        require(trimmed.isNotBlank()) { "标签名称不能为空" }
-        val existing = tagDao.getTagByName(trimmed)
-        val nextSortOrder = (tagDao.getMaxActiveSortOrder() ?: -1) + 1
-        when {
-            existing == null -> tagDao.insert(TagEntity(name = trimmed, sortOrder = nextSortOrder))
-            existing.deletedAt != null -> {
-                tagDao.update(
-                    existing.copy(
-                        sortOrder = nextSortOrder,
-                        deletedAt = null,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                )
-                existing.id
-            }
-            else -> error("标签已存在")
-        }
-    }
-
-    override suspend fun renameTag(id: Long, name: String) = database.withTransaction {
-        val trimmed = name.trim()
-        require(trimmed.isNotBlank()) { "标签名称不能为空" }
-        val existing = tagDao.getTagById(id) ?: error("标签不存在")
-        val sameName = tagDao.getTagByName(trimmed)
-        require(sameName == null || sameName.id == id) { "标签名称已存在" }
-        tagDao.update(existing.copy(name = trimmed, updatedAt = System.currentTimeMillis()))
-    }
-
-    override suspend fun reorderTags(ids: List<Long>) = database.withTransaction {
-        val tags = tagDao.getTagsSnapshot().filter { it.deletedAt == null }
-        val requestedIds = ids.distinct()
-        val activeIds = tags.map { it.id }
-        require(requestedIds.size == ids.size && requestedIds.toSet() == activeIds.toSet()) { "标签排序数据已变化，请重试" }
-
-        val byId = tags.associateBy { it.id }
-        val now = System.currentTimeMillis()
-        requestedIds.forEachIndexed { index, tagId ->
-            val tag = byId.getValue(tagId)
-            if (tag.sortOrder != index) {
-                tagDao.update(tag.copy(sortOrder = index, updatedAt = now))
-            }
-        }
-    }
-
-    override suspend fun deleteTag(id: Long) {
-        tagDao.softDelete(id)
-    }
-
-    override suspend fun ensureSeedData() = database.withTransaction {
-        if (accountDao.countActiveAccounts() == 0) {
-            accountDao.insertAll(SeedData.accounts)
-        }
-        if (categoryDao.countActiveCategories() == 0) {
-            categoryDao.insertAll(SeedData.categories)
-        }
-        if (tagDao.countActiveTags() == 0) {
-            tagDao.insertAll(SeedData.tags)
-        }
-    }
-
-    override suspend fun exportJson(): String {
-        val payload = BackupPayload(
-            exportedAt = System.currentTimeMillis(),
-            accounts = accountDao.getAccountsSnapshot(),
-            categories = categoryDao.getCategoriesSnapshot(),
-            tags = tagDao.getTagsSnapshot(),
-            transactions = transactionDao.getTransactionsSnapshot(),
-            transactionTags = transactionDao.getTransactionTagRefsSnapshot(),
-            budgets = budgetDao.getBudgetsSnapshot(),
-            recurringRules = recurringRuleDao.getRulesSnapshot()
-        )
-        return backupJson.encodeToString(payload)
-    }
-
-    override suspend fun exportCsv(): String {
-        val rows = transactionDao.getAllActive()
-        return buildString {
-            appendLine("type,amount,occurredAt,accountId,fromAccountId,toAccountId,categoryId,merchant,note,source")
-            rows.forEach { transaction ->
-                appendLine(
-                    listOf(
-                        transaction.type.name,
-                        transaction.amountCents.toString(),
-                        transaction.occurredAt.toString(),
-                        transaction.accountId?.toString().orEmpty(),
-                        transaction.fromAccountId?.toString().orEmpty(),
-                        transaction.toAccountId?.toString().orEmpty(),
-                        transaction.categoryId?.toString().orEmpty(),
-                        transaction.merchant,
-                        transaction.note,
-                        transaction.source.name
-                    ).joinToString(",") { it.csvEscape() }
-                )
-            }
-        }
-    }
-
-    override suspend fun previewImportJson(content: String): BackupPreview =
-        parseBackupPayload(content).toPreview()
-
-    override suspend fun importJson(content: String) {
-        val payload = parseBackupPayload(content)
-
-        database.withTransaction {
-            transactionDao.clearAllTagRefs()
-            transactionDao.clearAll()
-            recurringRuleDao.clearAll()
-            budgetDao.clearAll()
-            categoryDao.clearAll()
-            tagDao.clearAll()
-            accountDao.clearAll()
-
-            if (payload.accounts.isNotEmpty()) accountDao.insertAll(payload.accounts)
-            if (payload.categories.isNotEmpty()) categoryDao.insertAll(payload.categories)
-            if (payload.tags.isNotEmpty()) tagDao.insertAll(payload.tags)
-            if (payload.transactions.isNotEmpty()) transactionDao.insertAll(payload.transactions)
-            if (payload.transactionTags.isNotEmpty()) transactionDao.insertTagRefs(payload.transactionTags)
-            if (payload.budgets.isNotEmpty()) budgetDao.insertAll(payload.budgets)
-            if (payload.recurringRules.isNotEmpty()) recurringRuleDao.insertAll(payload.recurringRules)
-        }
-    }
-
-    private fun parseBackupPayload(content: String): BackupPayload {
-        val payload = backupJson.decodeFromString<BackupPayload>(content)
-        require(payload.schemaVersion == 1) { "暂不支持该备份版本" }
-        return payload
-    }
-
-    private suspend fun insertTransaction(draft: TransactionDraft): Long {
-        TransactionRules.validate(draft)
-        val transactionId = transactionDao.insert(
-            TransactionEntity(
-                type = draft.type,
-                amountCents = draft.amountCents,
-                occurredAt = draft.occurredAt,
-                accountId = draft.accountId,
-                fromAccountId = draft.fromAccountId,
-                toAccountId = draft.toAccountId,
-                categoryId = draft.categoryId,
-                merchant = draft.merchant.trim(),
-                note = draft.note.trim(),
-                source = draft.source
-            )
-        )
-        insertTagRefs(transactionId, draft.tagIds)
-        return transactionId
-    }
-
-    private suspend fun replaceTagRefs(transactionId: Long, tagIds: List<Long>) {
-        transactionDao.clearTagRefs(transactionId)
-        insertTagRefs(transactionId, tagIds)
-    }
-
-    private suspend fun insertTagRefs(transactionId: Long, tagIds: List<Long>) {
-        if (tagIds.isNotEmpty()) {
-            transactionDao.insertTagRefs(
-                tagIds.distinct().map { tagId ->
-                    TransactionTagCrossRef(transactionId = transactionId, tagId = tagId)
-                }
-            )
-        }
-    }
-
-    private suspend fun requireRuleAccountsAvailable(rule: RecurringRuleEntity) {
-        require(rule.hasAvailableAccounts()) { "周期规则引用的账户不可用" }
-    }
-
-    private suspend fun RecurringRuleEntity.hasAvailableAccounts(): Boolean {
-        return referencedAccountIds().all { accountId ->
-            accountDao.getAccount(accountId)?.let { it.deletedAt == null && !it.isArchived } == true
-        }
-    }
-
-    private fun RecurringRuleEntity.referencedAccountIds(): List<Long> {
-        return listOfNotNull(accountId, fromAccountId, toAccountId).distinct()
-    }
-
-    @Serializable
-    private data class BackupPayload(
-        val schemaVersion: Int = 1,
-        val exportedAt: Long,
-        val accounts: List<AccountEntity> = emptyList(),
-        val categories: List<CategoryEntity> = emptyList(),
-        val tags: List<TagEntity> = emptyList(),
-        val transactions: List<TransactionEntity> = emptyList(),
-        val transactionTags: List<TransactionTagCrossRef> = emptyList(),
-        val budgets: List<BudgetEntity> = emptyList(),
-        val recurringRules: List<RecurringRuleEntity> = emptyList()
-    ) {
-        fun toPreview(): BackupPreview =
-            BackupPreview(
-                schemaVersion = schemaVersion,
-                exportedAt = exportedAt,
-                accountCount = accounts.size,
-                categoryCount = categories.size,
-                tagCount = tags.size,
-                transactionCount = transactions.size,
-                budgetCount = budgets.size,
-                recurringRuleCount = recurringRules.size
-            )
-    }
-
-    private companion object {
-        const val MAX_RECURRING_RUNS_PER_RULE = 36
-
-        val backupJson: Json = Json {
-            prettyPrint = true
-            encodeDefaults = true
-            ignoreUnknownKeys = true
-        }
-    }
-}
-
-private fun RecurringRuleEntity.toDraft(occurredAt: Long): TransactionDraft =
-    TransactionDraft(
-        type = transactionType,
-        amountCents = amountCents,
-        occurredAt = occurredAt,
-        accountId = accountId,
-        fromAccountId = fromAccountId,
-        toAccountId = toAccountId,
-        categoryId = categoryId,
-        merchant = merchant,
-        note = note,
-        source = TransactionSource.RECURRING
-    )
-
-private fun TransactionDraft.isValid(): Boolean =
-    runCatching { TransactionRules.validate(this) }.isSuccess
-
-private fun Long.advanceByMonths(intervalMonths: Int): Long {
-    val months = intervalMonths.coerceAtLeast(1).toLong()
-    return Instant.ofEpochMilli(this)
-        .atZone(ZoneId.systemDefault())
-        .plusMonths(months)
-        .toInstant()
-        .toEpochMilli()
-}
-
-private fun String.csvEscape(): String {
-    val escaped = replace("\"", "\"\"")
-    return if (contains(",") || contains("\"") || contains("\n")) {
-        "\"$escaped\""
-    } else {
-        escaped
-    }
+    override suspend fun exportJson(): String = backupRepository.exportJson()
+    override suspend fun exportCsv(): String = backupRepository.exportCsv()
+    override suspend fun previewImportJson(content: String): BackupPreview = backupRepository.previewImportJson(content)
+    override suspend fun importJson(content: String) = backupRepository.importJson(content)
 }

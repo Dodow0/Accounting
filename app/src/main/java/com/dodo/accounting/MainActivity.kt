@@ -13,8 +13,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowCompat
 import com.dodo.accounting.ui.screen.AccountingApp
-import com.dodo.accounting.ui.screen.ThemeMode
-import com.dodo.accounting.ui.screen.UiPreferenceStore
+import com.dodo.accounting.data.prefs.ThemeMode
+import com.dodo.accounting.data.prefs.UiPreferenceStore
 import com.dodo.accounting.ui.theme.AccountingTheme
 import dagger.hilt.android.AndroidEntryPoint
 

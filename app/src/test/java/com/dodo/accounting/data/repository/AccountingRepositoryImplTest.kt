@@ -3,6 +3,7 @@ package com.dodo.accounting.data.repository
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.dodo.accounting.data.backup.BackupRepositoryImpl
 import com.dodo.accounting.data.local.AccountingDatabase
 import com.dodo.accounting.data.local.SeedData
 import com.dodo.accounting.data.local.entity.AccountEntity
@@ -38,7 +39,7 @@ class AccountingRepositoryImplTest {
         database = Room.inMemoryDatabaseBuilder(context, AccountingDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        repository = AccountingRepositoryImpl(database)
+        repository = AccountingRepositoryImpl(database, BackupRepositoryImpl(database))
     }
 
     @After

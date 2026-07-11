@@ -1,5 +1,7 @@
 package com.dodo.accounting.ui.screen
 
+import com.dodo.accounting.data.prefs.EntryPreferences
+
 import android.Manifest
 import android.os.Bundle
 import android.speech.RecognitionListener
