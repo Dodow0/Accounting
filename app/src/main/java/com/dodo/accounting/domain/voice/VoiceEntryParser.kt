@@ -1,8 +1,7 @@
-package com.dodo.accounting.ui.screen
+package com.dodo.accounting.domain.voice
 
 import com.dodo.accounting.data.local.entity.CategoryEntity
 import com.dodo.accounting.data.local.entity.TransactionType
-import com.dodo.accounting.ui.viewmodel.EntryUiState
 import java.time.Instant
 import java.time.ZoneId
 
@@ -10,9 +9,9 @@ internal class VoiceEntryParser(
     private val nowMillis: () -> Long = { System.currentTimeMillis() },
     private val zoneId: ZoneId = ZoneId.systemDefault()
 ) {
-    fun parse(text: String, uiState: EntryUiState): EntryPrefillDraft = parseDetailed(text, uiState).draft
+    fun parse(text: String, uiState: VoiceParseContext): EntryPrefillDraft = parseDetailed(text, uiState).draft
 
-    fun parseMany(text: String, uiState: EntryUiState): List<VoiceEntryParseResult> {
+    fun parseMany(text: String, uiState: VoiceParseContext): List<VoiceEntryParseResult> {
         val trimmed = text.trim()
         if (trimmed.isBlank()) return emptyList()
         val contextPrefix = VoiceDateTimeParser.dateContextPrefix(trimmed)
@@ -27,7 +26,7 @@ internal class VoiceEntryParser(
             }
     }
 
-    fun parseDetailed(text: String, uiState: EntryUiState): VoiceEntryParseResult {
+    fun parseDetailed(text: String, uiState: VoiceParseContext): VoiceEntryParseResult {
         val trimmed = text.trim()
         val typeMatch = detectType(trimmed)
         val type = typeMatch.value
@@ -79,7 +78,7 @@ internal class VoiceEntryParser(
         )
     }
 
-    fun guideExamples(uiState: EntryUiState): List<String> {
+    fun guideExamples(uiState: VoiceParseContext): List<String> {
         val preferredAccount = uiState.activeAccounts.firstOrNull()?.name ?: "支付宝"
         val secondAccount = uiState.activeAccounts.drop(1).firstOrNull()?.name ?: "微信"
         val learnedExamples = uiState.recentTransactions

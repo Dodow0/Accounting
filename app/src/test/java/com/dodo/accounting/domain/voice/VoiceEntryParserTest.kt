@@ -1,4 +1,4 @@
-package com.dodo.accounting.ui.screen
+package com.dodo.accounting.domain.voice
 
 import com.dodo.accounting.data.local.entity.AccountEntity
 import com.dodo.accounting.data.local.entity.CategoryEntity
@@ -6,9 +6,7 @@ import com.dodo.accounting.data.local.entity.CategoryKind
 import com.dodo.accounting.data.local.entity.TagEntity
 import com.dodo.accounting.data.local.entity.TransactionEntity
 import com.dodo.accounting.data.local.entity.TransactionType
-import com.dodo.accounting.data.local.model.AccountBalanceRow
 import com.dodo.accounting.data.local.model.TransactionWithDetails
-import com.dodo.accounting.ui.viewmodel.EntryUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -130,7 +128,7 @@ class VoiceEntryParserTest {
         assertEquals("和小王一起", parser.parse("午饭二十八微信备注和小王一起", sampleState()).note)
     }
 
-    private fun sampleState(includeHistory: Boolean = false): EntryUiState {
+    private fun sampleState(includeHistory: Boolean = false): VoiceParseContext {
         val accounts = listOf(
             AccountEntity(id = 1L, name = "支付宝"),
             AccountEntity(id = 2L, name = "微信"),
@@ -141,14 +139,10 @@ class VoiceEntryParserTest {
             CategoryEntity(id = 11L, name = "交通", kind = CategoryKind.EXPENSE, iconName = "commute"),
             CategoryEntity(id = 20L, name = "工资", kind = CategoryKind.INCOME, iconName = "work")
         )
-        return EntryUiState(
+        return VoiceParseContext(
             activeAccounts = accounts,
-            accounts = accounts.map {
-                AccountBalanceRow(
-                    account = it.copy(initialBalanceCents = if (it.id == 1L) 20_000L else 0L)
-                )
-            },
-            categories = categories,
+            expenseCategories = categories.filter { it.kind == CategoryKind.EXPENSE },
+            incomeCategories = categories.filter { it.kind == CategoryKind.INCOME },
             tags = listOf(
                 TagEntity(id = 100L, name = "朋友")
             ),

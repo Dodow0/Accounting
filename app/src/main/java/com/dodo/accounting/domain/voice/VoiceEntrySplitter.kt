@@ -1,4 +1,4 @@
-package com.dodo.accounting.ui.screen
+package com.dodo.accounting.domain.voice
 
 internal object VoiceEntrySplitter {
     fun split(text: String): List<String> {

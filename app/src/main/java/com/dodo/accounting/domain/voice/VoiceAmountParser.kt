@@ -1,4 +1,4 @@
-package com.dodo.accounting.ui.screen
+package com.dodo.accounting.domain.voice
 
 import java.math.BigDecimal
 

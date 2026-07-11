@@ -1,5 +1,7 @@
 package com.dodo.accounting.ui.screen
 
+import com.dodo.accounting.domain.voice.EntryPrefillDraft
+
 import com.dodo.accounting.data.prefs.ThemeMode
 import com.dodo.accounting.data.prefs.UiPreferenceStore
 

@@ -179,6 +179,9 @@ import com.dodo.accounting.domain.model.projectedCategoryBudgetCents
 import com.dodo.accounting.domain.util.handleAmountKey
 import com.dodo.accounting.domain.util.hasUnresolvedAmountExpression
 import com.dodo.accounting.domain.util.normalizedAmountInput
+import com.dodo.accounting.domain.voice.EntryPrefillDraft
+import com.dodo.accounting.domain.voice.VoiceEntryParseResult
+import com.dodo.accounting.domain.voice.VoiceEntryParser
 import com.dodo.accounting.ui.viewmodel.EntryUiState
 import com.dodo.accounting.ui.viewmodel.EntryViewModel
 import com.dodo.accounting.ui.viewmodel.ExportFormat
@@ -193,19 +196,6 @@ import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-
-internal data class EntryPrefillDraft(
-    val type: TransactionType = TransactionType.EXPENSE,
-    val amount: String = "",
-    val accountId: Long? = null,
-    val fromAccountId: Long? = null,
-    val toAccountId: Long? = null,
-    val categoryId: Long? = null,
-    val merchant: String = "",
-    val note: String = "",
-    val tagIds: Set<Long> = emptySet(),
-    val occurredAt: Long = System.currentTimeMillis()
-)
 
 private data class EntryFormSnapshot(
     val type: TransactionType,
@@ -469,7 +459,7 @@ internal fun EntrySheetContentV2(
                 }
                 val currentUiState = latestUiState
                 voiceRawText = text
-                val parsed = voiceEntryParser.parseDetailed(text, currentUiState)
+                val parsed = voiceEntryParser.parseDetailed(text, currentUiState.toVoiceParseContext())
                 voiceResult = parsed
                 applyPrefillDraft(parsed.draft, currentUiState)
                 voiceStatusText = "已识别并填入"
