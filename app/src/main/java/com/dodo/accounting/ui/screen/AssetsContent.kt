@@ -37,11 +37,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dodo.accounting.ui.viewmodel.AccountingUiState
+import com.dodo.accounting.ui.viewmodel.AssetsUiState
 
 @Composable
 internal fun AssetsScreen(
-    uiState: AccountingUiState,
+    uiState: AssetsUiState,
     amountsHidden: Boolean,
     onToggleAmountsHidden: () -> Unit,
     onOpenAccountManagement: () -> Unit,
@@ -96,7 +96,7 @@ internal fun AssetsScreen(
 
 @Composable
 private fun AssetsSummaryCard(
-    uiState: AccountingUiState,
+    uiState: AssetsUiState,
     amountsHidden: Boolean,
     onToggleAmountsHidden: () -> Unit
 ) {

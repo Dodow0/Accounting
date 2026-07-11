@@ -1,7 +1,6 @@
 package com.dodo.accounting.ui.screen
 
 import com.dodo.accounting.data.local.entity.AccountEntity
-import com.dodo.accounting.data.local.entity.AccountType
 import com.dodo.accounting.data.local.entity.CategoryEntity
 import com.dodo.accounting.data.local.entity.CategoryKind
 import com.dodo.accounting.data.local.entity.TagEntity
@@ -9,7 +8,7 @@ import com.dodo.accounting.data.local.entity.TransactionEntity
 import com.dodo.accounting.data.local.entity.TransactionType
 import com.dodo.accounting.data.local.model.AccountBalanceRow
 import com.dodo.accounting.data.local.model.TransactionWithDetails
-import com.dodo.accounting.ui.viewmodel.AccountingUiState
+import com.dodo.accounting.ui.viewmodel.EntryUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -131,18 +130,18 @@ class VoiceEntryParserTest {
         assertEquals("和小王一起", parser.parse("午饭二十八微信备注和小王一起", sampleState()).note)
     }
 
-    private fun sampleState(includeHistory: Boolean = false): AccountingUiState {
+    private fun sampleState(includeHistory: Boolean = false): EntryUiState {
         val accounts = listOf(
-            AccountEntity(id = 1L, name = "支付宝", type = AccountType.THIRD_PARTY_PAYMENT),
-            AccountEntity(id = 2L, name = "微信", type = AccountType.THIRD_PARTY_PAYMENT),
-            AccountEntity(id = 3L, name = "招商卡", type = AccountType.BANK_CARD)
+            AccountEntity(id = 1L, name = "支付宝"),
+            AccountEntity(id = 2L, name = "微信"),
+            AccountEntity(id = 3L, name = "招商卡")
         )
         val categories = listOf(
             CategoryEntity(id = 10L, name = "餐饮", kind = CategoryKind.EXPENSE, iconName = "restaurant"),
             CategoryEntity(id = 11L, name = "交通", kind = CategoryKind.EXPENSE, iconName = "commute"),
             CategoryEntity(id = 20L, name = "工资", kind = CategoryKind.INCOME, iconName = "work")
         )
-        return AccountingUiState(
+        return EntryUiState(
             activeAccounts = accounts,
             accounts = accounts.map {
                 AccountBalanceRow(

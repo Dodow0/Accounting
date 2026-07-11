@@ -177,8 +177,8 @@ import com.dodo.accounting.domain.model.projectedCategoryBudgetCents
 import com.dodo.accounting.domain.util.handleAmountKey
 import com.dodo.accounting.domain.util.hasUnresolvedAmountExpression
 import com.dodo.accounting.domain.util.normalizedAmountInput
-import com.dodo.accounting.ui.viewmodel.AccountingUiState
-import com.dodo.accounting.ui.viewmodel.AccountingViewModel
+import com.dodo.accounting.ui.viewmodel.EntryUiState
+import com.dodo.accounting.ui.viewmodel.EntryViewModel
 import com.dodo.accounting.ui.viewmodel.ExportFormat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -222,8 +222,8 @@ internal const val AMOUNT_KEY_SAVE_AND_CONTINUE = "再记一笔"
 
 @Composable
 internal fun EntrySheetContentV2(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
+    uiState: EntryUiState,
+    viewModel: EntryViewModel,
     prefillDraft: EntryPrefillDraft? = null,
     voiceEntryRequestSignal: Int = 0,
     entryPreferences: EntryPreferences = EntryPreferences(),
@@ -281,20 +281,20 @@ internal fun EntrySheetContentV2(
         }
     }
 
-    fun activeAccountIdOrNull(id: Long?, state: AccountingUiState = uiState): Long? {
+    fun activeAccountIdOrNull(id: Long?, state: EntryUiState = uiState): Long? {
         return state.activeAccounts.firstOrNull { it.id == id }?.id
     }
 
-    fun preferredAccountId(state: AccountingUiState = uiState): Long? {
+    fun preferredAccountId(state: EntryUiState = uiState): Long? {
         return activeAccountIdOrNull(entryPreferences.defaultAccountId, state)
             ?: state.activeAccounts.firstOrNull()?.id
     }
 
-    fun transferTargetFor(sourceAccountId: Long?, state: AccountingUiState = uiState): Long? {
+    fun transferTargetFor(sourceAccountId: Long?, state: EntryUiState = uiState): Long? {
         return state.activeAccounts.firstOrNull { it.id != sourceAccountId }?.id
     }
 
-    fun applyPrefillDraft(draft: EntryPrefillDraft, state: AccountingUiState = uiState) {
+    fun applyPrefillDraft(draft: EntryPrefillDraft, state: EntryUiState = uiState) {
         if (editing != null) return
         val defaultAccountId = preferredAccountId(state)
         val draftAccountId = activeAccountIdOrNull(draft.accountId, state)
@@ -1048,7 +1048,7 @@ private fun EntryVoiceStatusPanel(
     errorText: String?,
     isListening: Boolean,
     result: VoiceEntryParseResult?,
-    uiState: AccountingUiState,
+    uiState: EntryUiState,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier

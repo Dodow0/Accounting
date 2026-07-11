@@ -6,7 +6,6 @@ import androidx.test.core.app.ApplicationProvider
 import com.dodo.accounting.data.local.AccountingDatabase
 import com.dodo.accounting.data.local.SeedData
 import com.dodo.accounting.data.local.entity.AccountEntity
-import com.dodo.accounting.data.local.entity.AccountType
 import com.dodo.accounting.data.local.entity.CategoryEntity
 import com.dodo.accounting.data.local.entity.CategoryKind
 import com.dodo.accounting.data.local.entity.RecurringRuleEntity
@@ -153,7 +152,7 @@ class AccountingRepositoryImplTest {
         assertEquals(SeedData.tags.size, preview.tagCount)
         assertEquals(1, preview.transactionCount)
 
-        repository.addAccount(AccountEntity(name = "临时账户", type = AccountType.CUSTOM))
+        repository.addAccount(AccountEntity(name = "临时账户"))
         repository.addTransaction(
             TransactionDraft(
                 type = TransactionType.EXPENSE,
@@ -184,8 +183,8 @@ class AccountingRepositoryImplTest {
 
     @Test
     fun deleteAccountWithHistoryArchivesAndPreservesHistoricalAccountName() = runTest {
-        val cashId = repository.addAccount(AccountEntity(name = "现金账户", type = AccountType.CASH))
-        repository.addAccount(AccountEntity(name = "备用账户", type = AccountType.BANK_CARD))
+        val cashId = repository.addAccount(AccountEntity(name = "现金账户"))
+        repository.addAccount(AccountEntity(name = "备用账户"))
         repository.addTransaction(
             TransactionDraft(
                 type = TransactionType.INCOME,
@@ -204,8 +203,8 @@ class AccountingRepositoryImplTest {
 
     @Test
     fun deleteAccountWithoutHistorySoftDeletesIt() = runTest {
-        val emptyAccountId = repository.addAccount(AccountEntity(name = "空账户", type = AccountType.CASH))
-        repository.addAccount(AccountEntity(name = "保留账户", type = AccountType.BANK_CARD))
+        val emptyAccountId = repository.addAccount(AccountEntity(name = "空账户"))
+        repository.addAccount(AccountEntity(name = "保留账户"))
 
         val result = repository.deleteAccount(emptyAccountId)
 
@@ -219,7 +218,6 @@ class AccountingRepositoryImplTest {
         val accountId = repository.addAccount(
             AccountEntity(
                 name = "  旧账户  ",
-                type = AccountType.CASH,
                 initialBalanceCents = 1_000
             )
         )
@@ -227,7 +225,6 @@ class AccountingRepositoryImplTest {
         repository.updateAccount(
             id = accountId,
             name = "  工资卡  ",
-            type = AccountType.BANK_CARD,
             initialBalanceCents = 2_500,
             iconName = "credit_card",
             colorArgb = 0xFF0891B2
@@ -235,7 +232,6 @@ class AccountingRepositoryImplTest {
 
         val row = repository.observeAccountBalances().first().single { it.account.id == accountId }
         assertEquals("工资卡", row.account.name)
-        assertEquals(AccountType.BANK_CARD, row.account.type)
         assertEquals(2_500L, row.account.initialBalanceCents)
         assertEquals("credit_card", row.account.iconName)
         assertEquals(0xFF0891B2, row.account.colorArgb)
@@ -244,7 +240,7 @@ class AccountingRepositoryImplTest {
 
     @Test
     fun deleteAccountRejectsRemovingLastAvailableAccount() = runTest {
-        val onlyAccountId = repository.addAccount(AccountEntity(name = "唯一账户", type = AccountType.CASH))
+        val onlyAccountId = repository.addAccount(AccountEntity(name = "唯一账户"))
 
         val result = runCatching { repository.deleteAccount(onlyAccountId) }
 
@@ -254,8 +250,8 @@ class AccountingRepositoryImplTest {
 
     @Test
     fun archivingAccountDisablesEnabledRecurringRulesForThatAccount() = runTest {
-        val cashId = repository.addAccount(AccountEntity(name = "现金账户", type = AccountType.CASH))
-        repository.addAccount(AccountEntity(name = "备用账户", type = AccountType.BANK_CARD))
+        val cashId = repository.addAccount(AccountEntity(name = "现金账户"))
+        repository.addAccount(AccountEntity(name = "备用账户"))
         repository.addRecurringRule(
             RecurringRuleEntity(
                 name = "房租",
@@ -275,8 +271,8 @@ class AccountingRepositoryImplTest {
 
     @Test
     fun disabledRecurringRuleCannotBeReEnabledWhenAccountIsArchived() = runTest {
-        val cashId = repository.addAccount(AccountEntity(name = "现金账户", type = AccountType.CASH))
-        repository.addAccount(AccountEntity(name = "备用账户", type = AccountType.BANK_CARD))
+        val cashId = repository.addAccount(AccountEntity(name = "现金账户"))
+        repository.addAccount(AccountEntity(name = "备用账户"))
         val ruleId = repository.addRecurringRule(
             RecurringRuleEntity(
                 name = "房租",
@@ -297,7 +293,7 @@ class AccountingRepositoryImplTest {
 
     @Test
     fun deleteCategoryClearsTransactionsBudgetsAndRecurringRulesToUncategorized() = runTest {
-        val accountId = repository.addAccount(AccountEntity(name = "现金账户", type = AccountType.CASH))
+        val accountId = repository.addAccount(AccountEntity(name = "现金账户"))
         val categoryId = repository.addCategory(
             CategoryEntity(name = "旧餐饮", kind = CategoryKind.EXPENSE)
         )
@@ -335,7 +331,7 @@ class AccountingRepositoryImplTest {
 
     @Test
     fun recurringGenerationReportsSkippedRunsPastPerRuleCap() = runTest {
-        val accountId = repository.addAccount(AccountEntity(name = "现金账户", type = AccountType.CASH))
+        val accountId = repository.addAccount(AccountEntity(name = "现金账户"))
         val oldRunAt = Instant.now()
             .atZone(ZoneId.systemDefault())
             .minusMonths(40)

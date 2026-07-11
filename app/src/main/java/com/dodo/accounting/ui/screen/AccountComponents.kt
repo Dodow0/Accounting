@@ -4,7 +4,6 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -21,7 +20,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +36,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -50,12 +49,14 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Label
@@ -67,10 +68,9 @@ import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Assessment
-import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Category
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Commute
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DateRange
@@ -83,7 +83,7 @@ import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PhoneIphone
 import androidx.compose.material.icons.filled.PlayArrow
@@ -94,10 +94,10 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Wallet
 import androidx.compose.material.icons.filled.Work
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -166,10 +166,10 @@ import com.dodo.accounting.data.local.model.CategorySummaryRow as CategorySummar
 import com.dodo.accounting.data.local.model.TransactionWithDetails
 import com.dodo.accounting.domain.model.Money
 import com.dodo.accounting.domain.model.StatsPeriod
-import com.dodo.accounting.domain.model.projectedCategoryBudgetCents
 import com.dodo.accounting.domain.util.handleAmountKey
 import com.dodo.accounting.domain.util.hasUnresolvedAmountExpression
 import com.dodo.accounting.domain.util.normalizedAmountInput
+import com.dodo.accounting.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -182,57 +182,92 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun AmountKeypad(
-    value: String,
-    onValueChange: (String) -> Unit,
-    hasPendingCalculation: Boolean = false,
-    onConfirm: () -> Unit = {},
-    confirmEnabled: Boolean = true,
-    onSaveAndContinue: () -> Unit = {},
-    saveAndContinueEnabled: Boolean = true
-) {
-    val confirmLabel = if (hasPendingCalculation) "=" else "完成"
-    val rows = listOf(
-        listOf("7", "8", "9", "⌫"),
-        listOf("4", "5", "6", "-"),
-        listOf("1", "2", "3", "+"),
-        listOf(".", "0", AMOUNT_KEY_SAVE_AND_CONTINUE, confirmLabel)
-    )
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = LedgerCardShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+@Composable
+internal fun AccountRow(
+    row: AccountBalanceRow,
+    onClick: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
+    onRestore: (() -> Unit)? = null,
+    amountsHidden: Boolean = false,
+    deleteContentDescription: String = "删除账户",
+    confirmDeleteContentDescription: String = "确认删除账户"
+) {
+    var confirmDelete by remember(row.account.id) { mutableStateOf(false) }
+
+    LaunchedEffect(confirmDelete) {
+        if (confirmDelete) {
+            delay(2400)
+            confirmDelete = false
+        }
+    }
+
+    Card(
+        modifier = if (onClick != null) {
+            Modifier.fillMaxWidth().ledgerPressClickable(onClick = onClick)
+        } else {
+            Modifier.fillMaxWidth()
+        },
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column {
-            rows.forEach { row ->
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    row.forEach { key ->
-                        val isSaveAndContinue = key == AMOUNT_KEY_SAVE_AND_CONTINUE
-                        val isConfirm = key == confirmLabel
-                        AmountKey(
-                            label = key,
-                            modifier = Modifier.weight(1f),
-                            enabled = when {
-                                isSaveAndContinue -> saveAndContinueEnabled
-                                isConfirm -> confirmEnabled
-                                else -> true
-                            },
-                            confirmColor = if (hasPendingCalculation) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary,
-                            onClick = {
-                                when {
-                                    isSaveAndContinue -> onSaveAndContinue()
-                                    isConfirm -> onConfirm()
-                                    else -> onValueChange(handleAmountKey(value, key))
-                                }
-                            }
-                        )
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = Color(row.account.colorArgb).copy(alpha = 0.14f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        accountIcon(row.account),
+                        contentDescription = null,
+                        tint = Color(row.account.colorArgb)
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(row.account.name, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    accountIconLabel(row.account.iconName),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                privacyAmountLabel(row.balanceCents, amountsHidden),
+                fontWeight = FontWeight.SemiBold
+            )
+            if (onRestore != null) {
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = onRestore) {
+                    Icon(
+                        Icons.Default.Restore,
+                        contentDescription = "恢复账户",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            if (onDelete != null) {
+                Spacer(Modifier.width(4.dp))
+                IconButton(
+                    onClick = {
+                        if (confirmDelete) {
+                            confirmDelete = false
+                            onDelete()
+                        } else {
+                            confirmDelete = true
+                        }
                     }
+                ) {
+                    Icon(
+                        if (confirmDelete) Icons.Default.Check else Icons.Default.Delete,
+                        contentDescription = if (confirmDelete) confirmDeleteContentDescription else deleteContentDescription,
+                        tint = if (confirmDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -240,73 +275,43 @@ internal fun AmountKeypad(
 }
 
 @Composable
-internal fun AmountKey(
-    label: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    confirmColor: Color = MaterialTheme.colorScheme.primary,
-    onClick: () -> Unit
-) {
-    val isOperator = label in setOf("+", "-")
-    val isConfirm = label == "=" || label == "完成"
-    val isSaveAndContinue = label == AMOUNT_KEY_SAVE_AND_CONTINUE
-    val haptic = LocalHapticFeedback.current
-    val clickWithFeedback = {
-        if (enabled) {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            onClick()
-        }
-    }
-    val keyModifier = if (enabled) {
-        Modifier.ledgerPressClickable(onClick = clickWithFeedback)
-    } else {
-        Modifier
-    }
-    val containerColor = when {
-        isConfirm -> confirmColor
-        isSaveAndContinue -> MaterialTheme.colorScheme.primaryContainer
-        else -> MaterialTheme.colorScheme.surfaceVariant
-    }
-    val contentAlpha = if (enabled) 1f else 0.38f
+internal fun AddAccountCard(viewModel: SettingsViewModel) {
+    var name by remember { mutableStateOf("") }
+    var initialBalance by remember { mutableStateOf("") }
+    var iconName by remember { mutableStateOf("account_balance_wallet") }
 
-    Surface(
-        modifier = modifier
-            .height(58.dp)
-            .then(keyModifier),
-        color = containerColor.copy(alpha = if (enabled) 1f else 0.52f),
-        border = BorderStroke(0.5.dp, LedgerDivider)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            when {
-                label == "⌫" -> Icon(
-                    Icons.AutoMirrored.Filled.Backspace,
-                    contentDescription = "退格",
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha),
-                    modifier = Modifier.size(24.dp)
-                )
-                isConfirm -> Text(
-                    label,
-                    color = Color.White.copy(alpha = contentAlpha),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = if (label == "=") 28.sp else 15.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                isSaveAndContinue -> Text(
-                    label,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = contentAlpha),
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                else -> Text(
-                    label,
-                    color = (if (isOperator) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface).copy(alpha = contentAlpha),
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 24.sp
-                )
-            }
-        }
+    LedgerCard {
+            Text("新增资产账户", style = MaterialTheme.typography.titleMedium)
+            MinimalInputLine(
+                value = name,
+                onValueChange = { name = it },
+                placeholder = "账户名称",
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            MinimalInputLine(
+                value = initialBalance,
+                onValueChange = { initialBalance = it },
+                placeholder = "初始余额",
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+            AccountIconPicker(
+                selectedIconName = iconName,
+                tint = MaterialTheme.colorScheme.primary,
+                onSelected = { iconName = it }
+            )
+            LedgerActionButton(
+                label = "添加账户",
+                icon = Icons.Default.Add,
+                onClick = {
+                    viewModel.addAccount(name, initialBalance, iconName)
+                    name = ""
+                    initialBalance = ""
+                    iconName = "account_balance_wallet"
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
     }
 }

@@ -170,8 +170,8 @@ import com.dodo.accounting.domain.model.Money
 import com.dodo.accounting.domain.util.handleAmountKey
 import com.dodo.accounting.domain.util.hasUnresolvedAmountExpression
 import com.dodo.accounting.domain.util.normalizedAmountInput
-import com.dodo.accounting.ui.viewmodel.AccountingUiState
-import com.dodo.accounting.ui.viewmodel.AccountingViewModel
+import com.dodo.accounting.ui.viewmodel.SettingsUiState
+import com.dodo.accounting.ui.viewmodel.SettingsViewModel
 import com.dodo.accounting.ui.viewmodel.ExportFormat
 import com.dodo.accounting.ui.viewmodel.StatsRangeMode
 import kotlinx.coroutines.delay
@@ -191,8 +191,8 @@ import kotlin.math.roundToInt
 
 @Composable
 internal fun BudgetProgressCard(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel
 ) {
     var budgetAmount by remember(uiState.monthlyBudget?.amountCents) {
         mutableStateOf(uiState.monthlyBudget?.amountCents?.let { Money(it).formatPlain() } ?: "")
@@ -318,8 +318,8 @@ internal fun CategoryBudgetRow(
 
 @Composable
 internal fun RecurringRulesCard(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel
 ) {
     var name by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf(TransactionType.EXPENSE) }
@@ -450,7 +450,7 @@ internal fun RecurringRulesCard(
 @Composable
 internal fun RecurringRuleRow(
     rule: RecurringRuleEntity,
-    viewModel: AccountingViewModel
+    viewModel: SettingsViewModel
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),

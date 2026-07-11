@@ -2,12 +2,12 @@ package com.dodo.accounting.ui.screen
 
 import com.dodo.accounting.data.local.entity.TransactionType
 import com.dodo.accounting.data.local.model.TransactionWithDetails
-import com.dodo.accounting.ui.viewmodel.AccountingUiState
+import com.dodo.accounting.ui.viewmodel.EntryUiState
 
 internal object VoiceHistoryMatcher {
     fun findHint(
         text: String,
-        uiState: AccountingUiState,
+        uiState: EntryUiState,
         type: TransactionType
     ): VoiceHistoryHint? {
         if (type == TransactionType.TRANSFER) return null

@@ -23,7 +23,7 @@ internal class TransactionActions(
     private val scope: CoroutineScope,
     private val repository: AccountingRepository,
     private val addTransaction: AddTransactionUseCase,
-    private val localState: MutableStateFlow<AccountingUiState>,
+    private val editingTransaction: MutableStateFlow<TransactionWithDetails?>,
     private val showMessage: (String) -> Unit
 ) {
     fun addExpense(
@@ -103,11 +103,11 @@ internal class TransactionActions(
     }
 
     fun startEditTransaction(transaction: TransactionWithDetails) {
-        localState.update { it.copy(editingTransaction = transaction) }
+        editingTransaction.value = transaction
     }
 
     fun cancelEditTransaction() {
-        localState.update { it.copy(editingTransaction = null) }
+        editingTransaction.value = null
     }
 
     fun saveEditedTransaction(
@@ -211,7 +211,7 @@ internal class TransactionActions(
             )
         }
             .onSuccess {
-                localState.update { state -> state.copy(editingTransaction = null) }
+                editingTransaction.value = null
                 showMessage("流水已更新")
             }
             .onFailure { showMessage(it.message ?: "更新失败") }
@@ -550,11 +550,20 @@ internal class ManagementActions(
     }
 }
 
+
+internal data class BackupUiLocalState(
+    val exportPreview: String = "",
+    val exportContent: String = "",
+    val exportFormat: ExportFormat = ExportFormat.JSON,
+    val pendingImportPreview: com.dodo.accounting.domain.model.BackupPreview? = null,
+    val pendingImportContent: String = ""
+)
+
 internal class BackupActions(
     private val scope: CoroutineScope,
     private val repository: AccountingRepository,
     private val exportBackup: ExportBackupUseCase,
-    private val localState: MutableStateFlow<AccountingUiState>,
+    private val localState: MutableStateFlow<BackupUiLocalState>,
     private val showMessage: (String) -> Unit
 ) {
     fun export(format: ExportFormat) {

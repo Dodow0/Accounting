@@ -170,8 +170,7 @@ import com.dodo.accounting.domain.model.Money
 import com.dodo.accounting.domain.util.handleAmountKey
 import com.dodo.accounting.domain.util.hasUnresolvedAmountExpression
 import com.dodo.accounting.domain.util.normalizedAmountInput
-import com.dodo.accounting.ui.viewmodel.AccountingUiState
-import com.dodo.accounting.ui.viewmodel.AccountingViewModel
+import com.dodo.accounting.ui.viewmodel.StatsUiState
 import com.dodo.accounting.ui.viewmodel.ExportFormat
 import com.dodo.accounting.ui.viewmodel.StatsRangeMode
 import kotlinx.coroutines.delay

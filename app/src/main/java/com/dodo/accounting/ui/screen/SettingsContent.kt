@@ -167,8 +167,8 @@ import com.dodo.accounting.domain.model.StatsPeriod
 import com.dodo.accounting.domain.util.handleAmountKey
 import com.dodo.accounting.domain.util.hasUnresolvedAmountExpression
 import com.dodo.accounting.domain.util.normalizedAmountInput
-import com.dodo.accounting.ui.viewmodel.AccountingUiState
-import com.dodo.accounting.ui.viewmodel.AccountingViewModel
+import com.dodo.accounting.ui.viewmodel.SettingsUiState
+import com.dodo.accounting.ui.viewmodel.SettingsViewModel
 import com.dodo.accounting.ui.viewmodel.ExportFormat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -198,8 +198,8 @@ internal object MineRoute {
 
 @Composable
 internal fun MineScreen(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel,
     initialRoute: String? = null,
     onInitialRouteConsumed: () -> Unit = {},
     amountsHidden: Boolean = false,
@@ -295,7 +295,7 @@ internal fun MineScreen(
 
 @Composable
 internal fun MineMenu(
-    uiState: AccountingUiState,
+    uiState: SettingsUiState,
     amountsHidden: Boolean = false,
     entryPreferences: EntryPreferences = EntryPreferences(),
     themeMode: ThemeMode = ThemeMode.LIGHT,
@@ -422,7 +422,7 @@ private data class SettingsMenuEntry(
 )
 
 @Composable
-private fun SettingsHeaderCard(uiState: AccountingUiState) {
+private fun SettingsHeaderCard(uiState: SettingsUiState) {
     LedgerCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -469,7 +469,7 @@ private fun SettingsHeaderCard(uiState: AccountingUiState) {
 
 @Composable
 private fun LocalDataOverviewCard(
-    uiState: AccountingUiState,
+    uiState: SettingsUiState,
     amountsHidden: Boolean = false,
     onOpenData: () -> Unit
 ) {
@@ -689,7 +689,7 @@ internal fun MineBackHeader(
 
 @Composable
 internal fun EntryPreferencesPage(
-    uiState: AccountingUiState,
+    uiState: SettingsUiState,
     entryPreferences: EntryPreferences,
     onEntryPreferencesChange: (EntryPreferences) -> Unit,
     onBack: () -> Unit
@@ -1051,8 +1051,8 @@ private val ThemeMode.description: String
 
 @Composable
 internal fun AccountManagementPage(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel,
     onBack: () -> Unit,
     amountsHidden: Boolean = false
 ) {
@@ -1259,8 +1259,8 @@ private fun AccountEditSheet(
 
 @Composable
 internal fun CategoryManagementPage(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel,
     onBack: () -> Unit
 ) {
     LazyColumn(
@@ -1276,8 +1276,8 @@ internal fun CategoryManagementPage(
 
 @Composable
 internal fun BudgetSettingsPage(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel,
     onBack: () -> Unit
 ) {
     LazyColumn(

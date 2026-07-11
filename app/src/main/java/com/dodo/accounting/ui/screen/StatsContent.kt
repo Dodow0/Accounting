@@ -170,8 +170,8 @@ import com.dodo.accounting.domain.model.Money
 import com.dodo.accounting.domain.util.handleAmountKey
 import com.dodo.accounting.domain.util.hasUnresolvedAmountExpression
 import com.dodo.accounting.domain.util.normalizedAmountInput
-import com.dodo.accounting.ui.viewmodel.AccountingUiState
-import com.dodo.accounting.ui.viewmodel.AccountingViewModel
+import com.dodo.accounting.ui.viewmodel.StatsUiState
+import com.dodo.accounting.ui.viewmodel.StatsViewModel
 import com.dodo.accounting.ui.viewmodel.ExportFormat
 import com.dodo.accounting.ui.viewmodel.StatsRangeMode
 import kotlinx.coroutines.delay
@@ -216,8 +216,8 @@ private data class StatsCategoryAggregate(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun StatsScreen(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
+    uiState: StatsUiState,
+    viewModel: StatsViewModel,
     onEditTransaction: (TransactionWithDetails) -> Unit,
     amountsHidden: Boolean = false,
     initialAccountFilterId: Long? = null,
@@ -393,8 +393,8 @@ internal fun StatsScreen(
 
 @Composable
 internal fun StatsPeriodControls(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel
+    uiState: StatsUiState,
+    viewModel: StatsViewModel
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         StatsRangeSelector(
@@ -825,8 +825,8 @@ private fun StatMetricTile(
 
 @Composable
 internal fun StatsCategoryDetailScreen(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
+    uiState: StatsUiState,
+    viewModel: StatsViewModel,
     category: CategorySummary,
     onBack: () -> Unit,
     onEditTransaction: (TransactionWithDetails) -> Unit

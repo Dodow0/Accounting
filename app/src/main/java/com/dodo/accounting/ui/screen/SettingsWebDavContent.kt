@@ -167,8 +167,8 @@ import com.dodo.accounting.domain.model.StatsPeriod
 import com.dodo.accounting.domain.util.handleAmountKey
 import com.dodo.accounting.domain.util.hasUnresolvedAmountExpression
 import com.dodo.accounting.domain.util.normalizedAmountInput
-import com.dodo.accounting.ui.viewmodel.AccountingUiState
-import com.dodo.accounting.ui.viewmodel.AccountingViewModel
+import com.dodo.accounting.ui.viewmodel.SettingsUiState
+import com.dodo.accounting.ui.viewmodel.SettingsViewModel
 import com.dodo.accounting.ui.viewmodel.ExportFormat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -185,8 +185,8 @@ import java.util.Locale
 
 @Composable
 internal fun WebDavBackupPage(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel,
     config: WebDavConfig,
     onConfigChange: (WebDavConfig) -> Unit,
     onBack: () -> Unit

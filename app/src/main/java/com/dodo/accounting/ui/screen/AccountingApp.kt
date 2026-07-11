@@ -177,8 +177,13 @@ import com.dodo.accounting.domain.model.StatsPeriod
 import com.dodo.accounting.domain.util.handleAmountKey
 import com.dodo.accounting.domain.util.hasUnresolvedAmountExpression
 import com.dodo.accounting.domain.util.normalizedAmountInput
-import com.dodo.accounting.ui.viewmodel.AccountingUiState
-import com.dodo.accounting.ui.viewmodel.AccountingViewModel
+import androidx.activity.ComponentActivity
+import com.dodo.accounting.ui.viewmodel.AppSessionViewModel
+import com.dodo.accounting.ui.viewmodel.AssetsViewModel
+import com.dodo.accounting.ui.viewmodel.EntryViewModel
+import com.dodo.accounting.ui.viewmodel.HomeViewModel
+import com.dodo.accounting.ui.viewmodel.SettingsViewModel
+import com.dodo.accounting.ui.viewmodel.StatsViewModel
 import com.dodo.accounting.ui.viewmodel.ExportFormat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -248,23 +253,21 @@ internal fun LedgerPanelSurface(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountingApp(
-    viewModel: AccountingViewModel = hiltViewModel(),
     themeMode: ThemeMode = ThemeMode.LIGHT,
     onThemeModeChange: (ThemeMode) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val activity = context as ComponentActivity
     val preferenceStore = remember(context) { UiPreferenceStore(context) }
     val storedPreferences = remember(preferenceStore) { preferenceStore.load() }
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val sessionViewModel: AppSessionViewModel = hiltViewModel(activity)
+    val entryViewModel: EntryViewModel = hiltViewModel(activity)
+    val entryUiState by entryViewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-
-    LaunchedEffect(uiState.message) {
-        uiState.message?.let { message ->
-            scope.launch {
-                snackbarHostState.showSnackbar(message)
-                viewModel.clearMessage()
-            }
+    LaunchedEffect(Unit) {
+        sessionViewModel.messages.collect { message ->
+            snackbarHostState.showSnackbar(message)
         }
     }
 
@@ -290,12 +293,8 @@ fun AccountingApp(
         )
     }
 
-    LaunchedEffect(selectedTab) {
-        viewModel.setTrendDataEnabled(selectedTab == AppTab.Stats)
-    }
-
     val openManualEntry: () -> Unit = {
-        viewModel.cancelEditTransaction()
+        entryViewModel.cancelEditTransaction()
         pendingEntryPrefillDraft = null
         voiceEntryRequestSignal = 0
         entrySheetOpen = true
@@ -304,7 +303,7 @@ fun AccountingApp(
 
     val openVoiceEntry: () -> Unit = {
         if (entryPreferences.voiceEnabled) {
-            viewModel.cancelEditTransaction()
+            entryViewModel.cancelEditTransaction()
             pendingEntryPrefillDraft = null
             voiceEntryRequestSignal += 1
             entrySheetOpen = true
@@ -360,7 +359,7 @@ fun AccountingApp(
                 val openEditor: (TransactionWithDetails) -> Unit = { transaction ->
                     pendingEntryPrefillDraft = null
                     voiceEntryRequestSignal = 0
-                    viewModel.startEditTransaction(transaction)
+                    entryViewModel.startEditTransaction(transaction)
                     entrySheetOpen = true
                     scope.launch { entrySheetState.show() }
                 }
@@ -370,9 +369,11 @@ fun AccountingApp(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     composable(AppTab.Home.route) {
+                        val homeViewModel: HomeViewModel = hiltViewModel()
+                        val homeState by homeViewModel.uiState.collectAsStateWithLifecycle()
                         HomeScreen(
-                            uiState = uiState,
-                            viewModel = viewModel,
+                            uiState = homeState,
+                            viewModel = homeViewModel,
                             onEditTransaction = openEditor,
                             onOpenSearch = {
                                 pendingStatsViewMode = StatsInitialViewMode.Flow
@@ -388,9 +389,11 @@ fun AccountingApp(
                         )
                     }
                     composable(AppTab.Stats.route) {
+                        val statsViewModel: StatsViewModel = hiltViewModel()
+                        val statsState by statsViewModel.uiState.collectAsStateWithLifecycle()
                         StatsScreen(
-                            uiState = uiState,
-                            viewModel = viewModel,
+                            uiState = statsState,
+                            viewModel = statsViewModel,
                             onEditTransaction = openEditor,
                             amountsHidden = amountsHidden,
                             initialAccountFilterId = pendingStatsAccountFilterId,
@@ -400,8 +403,10 @@ fun AccountingApp(
                         )
                     }
                     composable(AppTab.Assets.route) {
+                        val assetsViewModel: AssetsViewModel = hiltViewModel()
+                        val assetsState by assetsViewModel.uiState.collectAsStateWithLifecycle()
                         AssetsScreen(
-                            uiState = uiState,
+                            uiState = assetsState,
                             amountsHidden = amountsHidden,
                             onToggleAmountsHidden = {
                                 amountsHidden = !amountsHidden
@@ -418,7 +423,7 @@ fun AccountingApp(
                                 }
                             },
                             onCreateTransfer = {
-                                viewModel.cancelEditTransaction()
+                                entryViewModel.cancelEditTransaction()
                                 voiceEntryRequestSignal = 0
                                 pendingEntryPrefillDraft = EntryPrefillDraft(type = TransactionType.TRANSFER)
                                 entrySheetOpen = true
@@ -437,9 +442,11 @@ fun AccountingApp(
                         )
                     }
                     composable(AppTab.Settings.route) {
+                        val settingsViewModel: SettingsViewModel = hiltViewModel()
+                        val settingsState by settingsViewModel.uiState.collectAsStateWithLifecycle()
                         MineScreen(
-                            uiState = uiState,
-                            viewModel = viewModel,
+                            uiState = settingsState,
+                            viewModel = settingsViewModel,
                             initialRoute = pendingSettingsRoute,
                             onInitialRouteConsumed = { pendingSettingsRoute = null },
                             amountsHidden = amountsHidden,
@@ -471,8 +478,8 @@ fun AccountingApp(
                 dragHandle = null
             ) {
                 EntrySheetContentV2(
-                    uiState = uiState,
-                    viewModel = viewModel,
+                    uiState = entryUiState,
+                    viewModel = entryViewModel,
                     prefillDraft = pendingEntryPrefillDraft,
                     voiceEntryRequestSignal = voiceEntryRequestSignal,
                     entryPreferences = entryPreferences,
@@ -480,7 +487,7 @@ fun AccountingApp(
                     onPrefillConsumed = { pendingEntryPrefillDraft = null },
                     onVoiceEntryRequestConsumed = { voiceEntryRequestSignal = 0 },
                     onDone = {
-                        viewModel.cancelEditTransaction()
+                        entryViewModel.cancelEditTransaction()
                         voiceEntryRequestSignal = 0
                         entrySheetOpen = false
                     }
@@ -667,11 +674,6 @@ internal enum class AppTab(
     Stats("stats", R.string.tab_stats, Icons.Default.PieChart),
     Assets("assets", R.string.tab_assets, Icons.Default.AccountBalanceWallet),
     Settings("settings", R.string.tab_settings, Icons.Default.Settings)
-}
-
-internal enum class LedgerViewMode(val label: String) {
-    List("列表"),
-    Calendar("日历")
 }
 
 internal enum class DateTimePickerMode {

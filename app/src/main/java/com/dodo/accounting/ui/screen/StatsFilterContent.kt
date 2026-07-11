@@ -172,8 +172,7 @@ import com.dodo.accounting.domain.model.Money
 import com.dodo.accounting.domain.util.handleAmountKey
 import com.dodo.accounting.domain.util.hasUnresolvedAmountExpression
 import com.dodo.accounting.domain.util.normalizedAmountInput
-import com.dodo.accounting.ui.viewmodel.AccountingUiState
-import com.dodo.accounting.ui.viewmodel.AccountingViewModel
+import com.dodo.accounting.ui.viewmodel.StatsUiState
 import com.dodo.accounting.ui.viewmodel.ExportFormat
 import com.dodo.accounting.ui.viewmodel.StatsRangeMode
 import kotlinx.coroutines.delay
@@ -221,21 +220,21 @@ internal fun StatsInitialViewMode.toStatsViewMode(): StatsViewMode = when (this)
     StatsInitialViewMode.Flow -> StatsViewMode.Flow
 }
 
-private fun AccountingUiState.accountFilterLabel(accountId: Long): String {
+private fun StatsUiState.accountFilterLabel(accountId: Long): String {
     return activeAccounts.firstOrNull { it.id == accountId }?.name
         ?: accounts.firstOrNull { it.account.id == accountId }?.account?.name
         ?: "已删除账户"
 }
 
-private fun AccountingUiState.categoryFilterLabel(categoryId: Long): String {
+private fun StatsUiState.categoryFilterLabel(categoryId: Long): String {
     return categories.firstOrNull { it.id == categoryId }?.name ?: "已删除分类"
 }
 
-private fun AccountingUiState.tagFilterLabel(tagId: Long): String {
+private fun StatsUiState.tagFilterLabel(tagId: Long): String {
     return tags.firstOrNull { it.id == tagId }?.name ?: "已删除标签"
 }
 
-private fun AccountingUiState.statsFilterCategories(type: TransactionType?): List<CategoryEntity> {
+private fun StatsUiState.statsFilterCategories(type: TransactionType?): List<CategoryEntity> {
     return when (type) {
         TransactionType.EXPENSE -> expenseCategories
         TransactionType.INCOME -> incomeCategories
@@ -305,7 +304,7 @@ internal fun List<TransactionWithDetails>.filterByStatsFilters(filters: StatsLoc
 
 @Composable
 internal fun StatsFilterHeader(
-    uiState: AccountingUiState,
+    uiState: StatsUiState,
     filters: StatsLocalFilters,
     onOpenFilter: () -> Unit,
     onFiltersChange: (StatsLocalFilters) -> Unit,
@@ -429,7 +428,7 @@ private fun StatsFilterChip(
 
 @Composable
 internal fun StatsFilterSheet(
-    uiState: AccountingUiState,
+    uiState: StatsUiState,
     initialFilters: StatsLocalFilters,
     onDismiss: () -> Unit,
     onApply: (StatsLocalFilters, StatsRangeMode, LocalDate, LocalDate) -> Unit

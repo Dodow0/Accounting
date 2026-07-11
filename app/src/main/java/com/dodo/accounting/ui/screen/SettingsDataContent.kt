@@ -167,8 +167,8 @@ import com.dodo.accounting.domain.model.StatsPeriod
 import com.dodo.accounting.domain.util.handleAmountKey
 import com.dodo.accounting.domain.util.hasUnresolvedAmountExpression
 import com.dodo.accounting.domain.util.normalizedAmountInput
-import com.dodo.accounting.ui.viewmodel.AccountingUiState
-import com.dodo.accounting.ui.viewmodel.AccountingViewModel
+import com.dodo.accounting.ui.viewmodel.SettingsUiState
+import com.dodo.accounting.ui.viewmodel.SettingsViewModel
 import com.dodo.accounting.ui.viewmodel.ExportFormat
 import com.dodo.accounting.domain.model.BackupPreview
 import kotlinx.coroutines.delay
@@ -186,8 +186,8 @@ import java.util.Locale
 
 @Composable
 internal fun DataManagementPage(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel,
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -290,8 +290,8 @@ internal fun DataManagementPage(
 
 @Composable
 internal fun ImportPreviewDialog(
-    uiState: AccountingUiState,
-    viewModel: AccountingViewModel
+    uiState: SettingsUiState,
+    viewModel: SettingsViewModel
 ) {
     val importPreview = uiState.pendingImportPreview ?: return
     ImportPreviewDialogContent(
