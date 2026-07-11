@@ -1,10 +1,10 @@
 package com.dodo.accounting.domain.usecase
 
-import com.dodo.accounting.domain.repository.AccountingRepository
+import com.dodo.accounting.domain.repository.PlanningRepository
 import javax.inject.Inject
 
 class EnsureSeedDataUseCase @Inject constructor(
-    private val repository: AccountingRepository
+    private val repository: PlanningRepository
 ) {
     suspend operator fun invoke() = repository.ensureSeedData()
 }

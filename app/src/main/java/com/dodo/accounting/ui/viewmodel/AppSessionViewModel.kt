@@ -2,7 +2,7 @@ package com.dodo.accounting.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.dodo.accounting.domain.repository.AccountingRepository
+import com.dodo.accounting.domain.repository.PlanningRepository
 import com.dodo.accounting.domain.usecase.EnsureSeedDataUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharedFlow
@@ -15,7 +15,7 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class AppSessionViewModel @Inject constructor(
-    private val repository: AccountingRepository,
+    private val planning: PlanningRepository,
     private val ensureSeedData: EnsureSeedDataUseCase,
     private val messenger: UiMessenger
 ) : ViewModel() {
@@ -26,7 +26,7 @@ class AppSessionViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 ensureSeedData()
-                repository.generateDueRecurringTransactions()
+                planning.generateDueRecurringTransactions()
             }
                 .onSuccess { result ->
                     if (result.skippedCount > 0) {

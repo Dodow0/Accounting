@@ -3,7 +3,7 @@ package com.dodo.accounting.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dodo.accounting.data.local.model.AccountBalanceRow
-import com.dodo.accounting.domain.repository.AccountingRepository
+import com.dodo.accounting.domain.repository.AccountRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,9 +22,9 @@ data class AssetsUiState(
 
 @HiltViewModel
 class AssetsViewModel @Inject constructor(
-    repository: AccountingRepository
+    accounts: AccountRepository
 ) : ViewModel() {
-    val uiState: StateFlow<AssetsUiState> = repository.observeAccountBalances()
+    val uiState: StateFlow<AssetsUiState> = accounts.observeAccountBalances()
         .map { accounts ->
             AssetsUiState(accounts = accounts, isLoading = false)
         }

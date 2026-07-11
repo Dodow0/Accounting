@@ -23,7 +23,10 @@ import com.dodo.accounting.data.local.model.TransactionWithDetails
 import com.dodo.accounting.domain.model.AccountingSummary
 import com.dodo.accounting.domain.model.StatsPeriod
 import com.dodo.accounting.domain.model.BackupPreview
-import com.dodo.accounting.domain.repository.AccountingRepository
+import com.dodo.accounting.domain.repository.AccountRepository
+import com.dodo.accounting.domain.repository.CatalogRepository
+import com.dodo.accounting.domain.repository.PlanningRepository
+import com.dodo.accounting.domain.repository.TransactionRepository
 import com.dodo.accounting.domain.repository.BackupRepository
 import com.dodo.accounting.domain.usecase.AddTransactionUseCase
 import com.dodo.accounting.domain.usecase.ExportBackupUseCase
@@ -69,7 +72,10 @@ data class SettingsUiState(
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val repository: AccountingRepository,
+    private val accounts: AccountRepository,
+    private val catalog: CatalogRepository,
+    private val transactions: TransactionRepository,
+    private val planning: PlanningRepository,
     private val backupRepository: BackupRepository,
     private val addTransaction: AddTransactionUseCase,
     private val exportBackup: ExportBackupUseCase,
@@ -79,37 +85,37 @@ class SettingsViewModel @Inject constructor(
     private val editingTransaction = MutableStateFlow<TransactionWithDetails?>(null)
 
     private val transactionActions by lazy {
-        TransactionActions(viewModelScope, repository, addTransaction, editingTransaction, messenger::show)
+        TransactionActions(viewModelScope, transactions, addTransaction, editingTransaction, messenger::show)
     }
     private val planningActions by lazy {
-        PlanningActions(viewModelScope, repository, messenger::show)
+        PlanningActions(viewModelScope, planning, messenger::show)
     }
     private val managementActions by lazy {
-        ManagementActions(viewModelScope, repository, messenger::show)
+        ManagementActions(viewModelScope, accounts, catalog, messenger::show)
     }
     private val backupActions by lazy {
         BackupActions(viewModelScope, backupRepository, exportBackup, backupLocalState, messenger::show)
     }
 
     private val baseData = combine(
-        repository.observeAccountBalances(),
-        repository.observeActiveAccounts(),
-        repository.observeCategories(),
-        repository.observeTags(),
-        repository.observeRecentTransactions()
+        accounts.observeAccountBalances(),
+        accounts.observeActiveAccounts(),
+        catalog.observeCategories(),
+        catalog.observeTags(),
+        transactions.observeRecentTransactions()
     ) { accounts, active, categories, tags, recent ->
         SettingsBase(accounts, active, categories, tags, recent)
     }
 
     private val countsAndTrash = combine(
-        repository.observeActiveTransactionCount(),
-        repository.observeTrash()
+        transactions.observeActiveTransactionCount(),
+        transactions.observeTrash()
     ) { count, trash -> count to trash }
 
-    private val planning = combine(
-        repository.observeMonthlyBudget(),
-        repository.observeRecurringRules(),
-        repository.observeActiveBudgets()
+    private val planningState = combine(
+        planning.observeMonthlyBudget(),
+        planning.observeRecurringRules(),
+        planning.observeActiveBudgets()
     ) { monthly, rules, activeBudgets ->
         Triple(monthly, rules, activeBudgets.filter { it.categoryId != null })
     }
@@ -117,8 +123,8 @@ class SettingsViewModel @Inject constructor(
     private val monthStart = startOfMonthMillis(System.currentTimeMillis())
     private val monthEnd = addMonthsMillis(monthStart, 1)
     private val monthSummaryFlow = combine(
-        repository.observePeriodSummary(monthStart, monthEnd),
-        repository.observeExpenseByCategory(monthStart, monthEnd)
+        transactions.observePeriodSummary(monthStart, monthEnd),
+        transactions.observeExpenseByCategory(monthStart, monthEnd)
     ) { totals, expenseByCategory ->
         AccountingSummary(
             periodLabel = "",
@@ -131,7 +137,7 @@ class SettingsViewModel @Inject constructor(
     val uiState: StateFlow<SettingsUiState> = combine(
         baseData,
         countsAndTrash,
-        planning,
+        planningState,
         backupLocalState,
         monthSummaryFlow
     ) { base, countsTrash, plan, backup, summary ->

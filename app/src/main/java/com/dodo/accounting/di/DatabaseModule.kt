@@ -5,8 +5,12 @@ import androidx.room.Room
 import com.dodo.accounting.data.backup.BackupRepositoryImpl
 import com.dodo.accounting.data.local.AccountingDatabase
 import com.dodo.accounting.data.repository.AccountingRepositoryImpl
+import com.dodo.accounting.domain.repository.AccountRepository
 import com.dodo.accounting.domain.repository.AccountingRepository
 import com.dodo.accounting.domain.repository.BackupRepository
+import com.dodo.accounting.domain.repository.CatalogRepository
+import com.dodo.accounting.domain.repository.PlanningRepository
+import com.dodo.accounting.domain.repository.TransactionRepository
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -40,6 +44,30 @@ abstract class RepositoryModule {
     abstract fun bindAccountingRepository(
         impl: AccountingRepositoryImpl
     ): AccountingRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAccountRepository(
+        impl: AccountingRepositoryImpl
+    ): AccountRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCatalogRepository(
+        impl: AccountingRepositoryImpl
+    ): CatalogRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindTransactionRepository(
+        impl: AccountingRepositoryImpl
+    ): TransactionRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindPlanningRepository(
+        impl: AccountingRepositoryImpl
+    ): PlanningRepository
 
     @Binds
     @Singleton

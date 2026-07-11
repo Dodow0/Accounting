@@ -234,7 +234,8 @@ internal fun HomeScreen(
                 period = uiState.homePeriod,
                 rangeStart = homeRangeStart,
                 rangeEndExclusive = homeRangeEndExclusive,
-                transactions = homeTransactions,
+                expenseCents = uiState.periodSummary.expenseCents,
+                incomeCents = uiState.periodSummary.incomeCents,
                 onPeriodSelected = { period ->
                     viewModel.setHomePeriod(period)
                     if (period == HomePeriod.CUSTOM) customRangeSheetOpen = true
@@ -308,7 +309,8 @@ internal fun HomeMonthlySummaryCard(
     period: HomePeriod,
     rangeStart: LocalDate,
     rangeEndExclusive: LocalDate,
-    transactions: List<TransactionWithDetails>,
+    expenseCents: Long,
+    incomeCents: Long,
     onPeriodSelected: (HomePeriod) -> Unit,
     onPreviousPeriod: () -> Unit,
     onNextPeriod: () -> Unit,
@@ -316,12 +318,6 @@ internal fun HomeMonthlySummaryCard(
     amountsHidden: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val incomeCents = transactions
-        .filter { it.transaction.type == TransactionType.INCOME }
-        .sumOf { it.transaction.amountCents }
-    val expenseCents = transactions
-        .filter { it.transaction.type == TransactionType.EXPENSE }
-        .sumOf { it.transaction.amountCents }
     val balanceCents = incomeCents - expenseCents
 
     Card(

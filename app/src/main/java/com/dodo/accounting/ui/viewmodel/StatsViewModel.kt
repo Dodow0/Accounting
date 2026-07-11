@@ -20,7 +20,9 @@ import com.dodo.accounting.domain.model.AccountingSummary
 import com.dodo.accounting.domain.model.DateRange
 import com.dodo.accounting.domain.model.StatsPeriod
 import com.dodo.accounting.domain.model.rangeContaining
-import com.dodo.accounting.domain.repository.AccountingRepository
+import com.dodo.accounting.domain.repository.AccountRepository
+import com.dodo.accounting.domain.repository.CatalogRepository
+import com.dodo.accounting.domain.repository.TransactionRepository
 import com.dodo.accounting.domain.usecase.AddTransactionUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -60,7 +62,9 @@ data class StatsUiState(
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class StatsViewModel @Inject constructor(
-    private val repository: AccountingRepository,
+    private val accounts: AccountRepository,
+    private val catalog: CatalogRepository,
+    private val transactions: TransactionRepository,
     private val addTransaction: AddTransactionUseCase,
     private val messenger: UiMessenger
 ) : ViewModel() {
@@ -73,7 +77,7 @@ class StatsViewModel @Inject constructor(
     private val editingTransaction = MutableStateFlow<TransactionWithDetails?>(null)
 
     private val transactionActions by lazy {
-        TransactionActions(viewModelScope, repository, addTransaction, editingTransaction, messenger::show)
+        TransactionActions(viewModelScope, transactions, addTransaction, editingTransaction, messenger::show)
     }
 
     private val statsRangeFlow = combine(
@@ -98,8 +102,8 @@ class StatsViewModel @Inject constructor(
 
     private val summaryFlow = statsRangeFlow.flatMapLatest { range ->
         combine(
-            repository.observePeriodSummary(range.startMillis, range.endMillis),
-            repository.observeExpenseByCategory(range.startMillis, range.endMillis)
+            transactions.observePeriodSummary(range.startMillis, range.endMillis),
+            transactions.observeExpenseByCategory(range.startMillis, range.endMillis)
         ) { totals, expenseByCategory ->
             AccountingSummary(
                 periodLabel = range.label,
@@ -111,7 +115,7 @@ class StatsViewModel @Inject constructor(
     }
 
     private val periodTransactionsFlow = statsRangeFlow.flatMapLatest { range ->
-        repository.searchTransactions(
+        transactions.searchTransactions(
             query = "",
             startAt = range.startMillis,
             endAt = range.endMillis,
@@ -120,7 +124,7 @@ class StatsViewModel @Inject constructor(
     }
 
     private val calendarMonthTransactionsFlow = calendarMonthStartMillis.flatMapLatest { monthStart ->
-        repository.searchTransactions(
+        transactions.searchTransactions(
             query = "",
             startAt = monthStart,
             endAt = addMonthsMillis(monthStart, 1),
@@ -130,17 +134,17 @@ class StatsViewModel @Inject constructor(
 
     private val trendBucketsFlow = kotlinx.coroutines.flow.flow {
         val trendMonthStart = startOfMonthMillis(System.currentTimeMillis())
-        repository.observeMonthlyTrend(
+        transactions.observeMonthlyTrend(
             startAt = addMonthsMillis(trendMonthStart, -5),
             endAt = addMonthsMillis(trendMonthStart, 1)
         ).collect { emit(it) }
     }
 
     private val catalogFlow = combine(
-        repository.observeActiveAccounts(),
-        repository.observeAccountBalances(),
-        repository.observeCategories(),
-        repository.observeTags()
+        accounts.observeActiveAccounts(),
+        accounts.observeAccountBalances(),
+        catalog.observeCategories(),
+        catalog.observeTags()
     ) { activeAccounts, accounts, categories, tags ->
         StatsCatalogBundle(activeAccounts, accounts, categories, tags)
     }

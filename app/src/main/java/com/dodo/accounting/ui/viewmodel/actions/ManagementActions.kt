@@ -6,20 +6,22 @@ import com.dodo.accounting.data.local.entity.CategoryKind
 import com.dodo.accounting.domain.model.AccountRemovalAction
 import com.dodo.accounting.domain.model.AccountRemovalResult
 import com.dodo.accounting.domain.model.Money
-import com.dodo.accounting.domain.repository.AccountingRepository
+import com.dodo.accounting.domain.repository.AccountRepository
+import com.dodo.accounting.domain.repository.CatalogRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 internal class ManagementActions(
     private val scope: CoroutineScope,
-    private val repository: AccountingRepository,
+    private val accounts: AccountRepository,
+    private val catalog: CatalogRepository,
     private val showMessage: (String) -> Unit
 ) {
     fun addAccount(name: String, initialBalance: String, iconName: String) {
         scope.launch {
             runCatching {
                 require(name.isNotBlank()) { "账户名称不能为空" }
-                repository.addAccount(
+                accounts.addAccount(
                     AccountEntity(
                         name = name.trim(),
                         initialBalanceCents = Money.requireMajorStrict(initialBalance).cents,
@@ -44,7 +46,7 @@ internal class ManagementActions(
         scope.launch {
             runCatching {
                 require(name.isNotBlank()) { "账户名称不能为空" }
-                repository.updateAccount(
+                accounts.updateAccount(
                     id = id,
                     name = name.trim(),
                     initialBalanceCents = Money.requireMajorStrict(initialBalance).cents,
@@ -61,7 +63,7 @@ internal class ManagementActions(
 
     fun archiveAccount(id: Long) {
         scope.launch {
-            runCatching { repository.archiveAccount(id, true) }
+            runCatching { accounts.archiveAccount(id, true) }
                 .onSuccess { showMessage(it.toAccountRemovalMessage()) }
                 .onFailure { showMessage(it.message ?: "归档账户失败") }
         }
@@ -69,7 +71,7 @@ internal class ManagementActions(
 
     fun deleteAccount(id: Long) {
         scope.launch {
-            runCatching { repository.deleteAccount(id) }
+            runCatching { accounts.deleteAccount(id) }
                 .onSuccess { showMessage(it.toAccountRemovalMessage()) }
                 .onFailure { showMessage(it.message ?: "移除账户失败") }
         }
@@ -77,7 +79,7 @@ internal class ManagementActions(
 
     fun restoreAccount(id: Long) {
         scope.launch {
-            runCatching { repository.archiveAccount(id, false) }
+            runCatching { accounts.archiveAccount(id, false) }
                 .onSuccess { showMessage(it.toAccountRemovalMessage()) }
                 .onFailure { showMessage(it.message ?: "恢复账户失败") }
         }
@@ -85,14 +87,14 @@ internal class ManagementActions(
 
     fun reorderAccounts(ids: List<Long>) {
         scope.launch {
-            runCatching { repository.reorderAccounts(ids) }
+            runCatching { accounts.reorderAccounts(ids) }
                 .onFailure { showMessage(it.message ?: "账户排序失败") }
         }
     }
 
     fun addTag(name: String) {
         scope.launch {
-            runCatching { repository.addTag(name) }
+            runCatching { catalog.addTag(name) }
                 .onSuccess { showMessage("标签已添加") }
                 .onFailure { showMessage(it.message ?: "添加标签失败") }
         }
@@ -106,7 +108,7 @@ internal class ManagementActions(
     ) {
         scope.launch {
             runCatching {
-                repository.addCategory(
+                catalog.addCategory(
                     CategoryEntity(
                         name = name,
                         kind = kind,
@@ -122,7 +124,7 @@ internal class ManagementActions(
 
     fun renameCategory(id: Long, name: String) {
         scope.launch {
-            runCatching { repository.renameCategory(id, name) }
+            runCatching { catalog.renameCategory(id, name) }
                 .onSuccess { showMessage("分类已更新") }
                 .onFailure { showMessage(it.message ?: "更新分类失败") }
         }
@@ -130,7 +132,7 @@ internal class ManagementActions(
 
     fun updateCategory(id: Long, name: String, iconName: String, colorArgb: Long) {
         scope.launch {
-            runCatching { repository.updateCategory(id, name, iconName, colorArgb) }
+            runCatching { catalog.updateCategory(id, name, iconName, colorArgb) }
                 .onSuccess { showMessage("分类已更新") }
                 .onFailure { showMessage(it.message ?: "更新分类失败") }
         }
@@ -138,21 +140,21 @@ internal class ManagementActions(
 
     fun moveCategory(id: Long, direction: Int) {
         scope.launch {
-            runCatching { repository.moveCategory(id, direction) }
+            runCatching { catalog.moveCategory(id, direction) }
                 .onFailure { showMessage(it.message ?: "分类排序失败") }
         }
     }
 
     fun reorderCategories(ids: List<Long>) {
         scope.launch {
-            runCatching { repository.reorderCategories(ids) }
+            runCatching { catalog.reorderCategories(ids) }
                 .onFailure { showMessage(it.message ?: "分类排序失败") }
         }
     }
 
     fun deleteCategory(id: Long) {
         scope.launch {
-            runCatching { repository.deleteCategory(id) }
+            runCatching { catalog.deleteCategory(id) }
                 .onSuccess { showMessage("分类已删除") }
                 .onFailure { showMessage(it.message ?: "删除分类失败") }
         }
@@ -160,7 +162,7 @@ internal class ManagementActions(
 
     fun renameTag(id: Long, name: String) {
         scope.launch {
-            runCatching { repository.renameTag(id, name) }
+            runCatching { catalog.renameTag(id, name) }
                 .onSuccess { showMessage("标签已更新") }
                 .onFailure { showMessage(it.message ?: "更新标签失败") }
         }
@@ -168,14 +170,14 @@ internal class ManagementActions(
 
     fun reorderTags(ids: List<Long>) {
         scope.launch {
-            runCatching { repository.reorderTags(ids) }
+            runCatching { catalog.reorderTags(ids) }
                 .onFailure { showMessage(it.message ?: "标签排序失败") }
         }
     }
 
     fun deleteTag(id: Long) {
         scope.launch {
-            runCatching { repository.deleteTag(id) }
+            runCatching { catalog.deleteTag(id) }
                 .onSuccess { showMessage("标签已删除") }
                 .onFailure { showMessage(it.message ?: "删除标签失败") }
         }

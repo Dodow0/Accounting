@@ -1,11 +1,6 @@
 package com.dodo.accounting.ui.viewmodel
 
-import com.dodo.accounting.ui.viewmodel.actions.BackupActions
-import com.dodo.accounting.ui.viewmodel.actions.BackupUiLocalState
-import com.dodo.accounting.ui.viewmodel.actions.ManagementActions
-import com.dodo.accounting.ui.viewmodel.actions.PlanningActions
 import com.dodo.accounting.ui.viewmodel.actions.TransactionActions
-
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dodo.accounting.core.time.addDaysMillis
@@ -14,10 +9,11 @@ import com.dodo.accounting.core.time.localDateFromMillis
 import com.dodo.accounting.core.time.localDateStartMillis
 import com.dodo.accounting.core.time.startOfDayMillis
 import com.dodo.accounting.core.time.startOfMonthMillis
+import com.dodo.accounting.data.local.model.PeriodSummaryRow
 import com.dodo.accounting.data.local.model.TransactionWithDetails
 import com.dodo.accounting.domain.model.StatsPeriod
 import com.dodo.accounting.domain.model.rangeContaining
-import com.dodo.accounting.domain.repository.AccountingRepository
+import com.dodo.accounting.domain.repository.TransactionRepository
 import com.dodo.accounting.domain.usecase.AddTransactionUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -32,6 +28,7 @@ import javax.inject.Inject
 
 data class HomeUiState(
     val homeTransactions: List<TransactionWithDetails> = emptyList(),
+    val periodSummary: PeriodSummaryRow = PeriodSummaryRow(),
     val homePeriod: HomePeriod = HomePeriod.MONTH,
     val homeRangeStartMillis: Long = startOfMonthMillis(System.currentTimeMillis()),
     val homeRangeEndMillis: Long = addMonthsMillis(startOfMonthMillis(System.currentTimeMillis()), 1),
@@ -41,7 +38,7 @@ data class HomeUiState(
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val repository: AccountingRepository,
+    private val transactions: TransactionRepository,
     private val addTransaction: AddTransactionUseCase,
     private val messenger: UiMessenger
 ) : ViewModel() {
@@ -51,7 +48,7 @@ class HomeViewModel @Inject constructor(
     private val editingTransaction = MutableStateFlow<TransactionWithDetails?>(null)
 
     private val transactionActions by lazy {
-        TransactionActions(viewModelScope, repository, addTransaction, editingTransaction, messenger::show)
+        TransactionActions(viewModelScope, transactions, addTransaction, editingTransaction, messenger::show)
     }
 
     private val homeRangeFlow = combine(homePeriod, homeAnchorMillis, homeCustomRange) { period, anchorMillis, customRange ->
@@ -73,14 +70,18 @@ class HomeViewModel @Inject constructor(
     }
 
     val uiState: StateFlow<HomeUiState> = homeRangeFlow.flatMapLatest { range ->
-        repository.searchTransactions(
-            query = "",
-            startAt = range.startMillis,
-            endAt = range.endMillis,
-            limit = 1_000
-        ).map { transactions ->
+        combine(
+            transactions.searchTransactions(
+                query = "",
+                startAt = range.startMillis,
+                endAt = range.endMillis,
+                limit = 1_000
+            ),
+            transactions.observePeriodSummary(range.startMillis, range.endMillis)
+        ) { list, summary ->
             HomeUiState(
-                homeTransactions = transactions,
+                homeTransactions = list,
+                periodSummary = summary,
                 homePeriod = range.period,
                 homeRangeStartMillis = range.startMillis,
                 homeRangeEndMillis = range.endMillis,

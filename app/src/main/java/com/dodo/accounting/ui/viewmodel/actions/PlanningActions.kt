@@ -5,13 +5,13 @@ import com.dodo.accounting.data.local.entity.RecurringRuleEntity
 import com.dodo.accounting.data.local.entity.TransactionType
 import com.dodo.accounting.domain.model.Money
 import com.dodo.accounting.domain.model.RecurringGenerationResult
-import com.dodo.accounting.domain.repository.AccountingRepository
+import com.dodo.accounting.domain.repository.PlanningRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 internal class PlanningActions(
     private val scope: CoroutineScope,
-    private val repository: AccountingRepository,
+    private val repository: PlanningRepository,
     private val showMessage: (String) -> Unit
 ) {
     fun setMonthlyBudget(amount: String) {

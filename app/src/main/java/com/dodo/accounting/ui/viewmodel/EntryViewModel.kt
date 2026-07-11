@@ -18,7 +18,10 @@ import com.dodo.accounting.data.local.entity.TransactionType
 import com.dodo.accounting.data.local.model.AccountBalanceRow
 import com.dodo.accounting.data.local.model.CategorySummaryRow
 import com.dodo.accounting.data.local.model.TransactionWithDetails
-import com.dodo.accounting.domain.repository.AccountingRepository
+import com.dodo.accounting.domain.repository.AccountRepository
+import com.dodo.accounting.domain.repository.CatalogRepository
+import com.dodo.accounting.domain.repository.PlanningRepository
+import com.dodo.accounting.domain.repository.TransactionRepository
 import com.dodo.accounting.domain.usecase.AddTransactionUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -53,7 +56,10 @@ data class EntryUiState(
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class EntryViewModel @Inject constructor(
-    private val repository: AccountingRepository,
+    private val accounts: AccountRepository,
+    private val catalog: CatalogRepository,
+    private val transactions: TransactionRepository,
+    private val planning: PlanningRepository,
     private val addTransaction: AddTransactionUseCase,
     private val messenger: UiMessenger
 ) : ViewModel() {
@@ -61,31 +67,31 @@ class EntryViewModel @Inject constructor(
     private val editingTransaction = MutableStateFlow<TransactionWithDetails?>(null)
 
     private val transactionActions by lazy {
-        TransactionActions(viewModelScope, repository, addTransaction, editingTransaction, messenger::show)
+        TransactionActions(viewModelScope, transactions, addTransaction, editingTransaction, messenger::show)
     }
     private val managementActions by lazy {
-        ManagementActions(viewModelScope, repository, messenger::show)
+        ManagementActions(viewModelScope, accounts, catalog, messenger::show)
     }
 
     private val baseFlow = combine(
-        repository.observeAccountBalances(),
-        repository.observeActiveAccounts(),
-        repository.observeCategories(),
-        repository.observeTags(),
-        repository.observeRecentTransactions()
+        accounts.observeAccountBalances(),
+        accounts.observeActiveAccounts(),
+        catalog.observeCategories(),
+        catalog.observeTags(),
+        transactions.observeRecentTransactions()
     ) { accounts, activeAccounts, categories, tags, recent ->
         EntryBase(accounts, activeAccounts, categories, tags, recent)
     }
 
     private val planningFlow = combine(
-        repository.observeMonthlyBudget(),
-        repository.observeActiveBudgets()
+        planning.observeMonthlyBudget(),
+        planning.observeActiveBudgets()
     ) { monthly, active ->
         monthly to active.filter { it.categoryId != null }
     }
 
     private val entryMonthExpenseFlow = entryMonthStartMillis.flatMapLatest { monthStart ->
-        repository.observeExpenseByCategory(
+        transactions.observeExpenseByCategory(
             startAt = monthStart,
             endAt = addMonthsMillis(monthStart, 1)
         )

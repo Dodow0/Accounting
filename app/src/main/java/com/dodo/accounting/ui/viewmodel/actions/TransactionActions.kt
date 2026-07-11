@@ -4,7 +4,7 @@ import com.dodo.accounting.data.local.entity.TransactionType
 import com.dodo.accounting.data.local.model.TransactionWithDetails
 import com.dodo.accounting.domain.model.Money
 import com.dodo.accounting.domain.model.TransactionDraft
-import com.dodo.accounting.domain.repository.AccountingRepository
+import com.dodo.accounting.domain.repository.TransactionRepository
 import com.dodo.accounting.domain.usecase.AddTransactionUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,7 +12,7 @@ import kotlinx.coroutines.launch
 
 internal class TransactionActions(
     private val scope: CoroutineScope,
-    private val repository: AccountingRepository,
+    private val repository: TransactionRepository,
     private val addTransaction: AddTransactionUseCase,
     private val editingTransaction: MutableStateFlow<TransactionWithDetails?>,
     private val showMessage: (String) -> Unit
